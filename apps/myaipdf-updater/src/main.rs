@@ -3,6 +3,9 @@ use std::path::PathBuf;
 use std::process::Command;
 
 fn run() -> Result<(), String> {
+    if std::env::args_os().len() == 1 {
+        return standalone();
+    }
     let mut args = std::env::args().skip(1);
     let (mut package, mut application, mut pid) = (None, None, None);
     while let Some(arg) = args.next() {
@@ -58,6 +61,47 @@ fn run() -> Result<(), String> {
     let status = Command::new("/usr/bin/open").arg("-n").arg(&receipt.application).status().map_err(|_| "更新已安装，请手动打开 MyAIPDF")?;
     if !status.success() {
         return Err("更新已安装，请手动打开 MyAIPDF".into());
+    }
+    Ok(())
+}
+
+fn standalone() -> Result<(), String> {
+    let exe = std::env::current_exe().and_then(|p| p.canonicalize()).map_err(|_| "无法确定增量安装助手位置")?;
+    let bundle = exe.ancestors().find(|p| p.file_name().is_some_and(|n| n == printcraft_update::delta::INSTALLER)).ok_or("请从增量包打开安装助手")?;
+    let status =
+        Command::new("/usr/bin/codesign").args(["--verify", "--deep", "--strict"]).arg(bundle).status().map_err(|_| "无法校验增量安装助手")?;
+    if !status.success() {
+        return Err("增量安装助手签名校验失败，未修改应用".into());
+    }
+    let directory = bundle.join("Contents/Resources/delta");
+    let manifest = printcraft_update::delta::Manifest::read(&directory)?;
+    let description = format!(
+        "此增量包仅将未改动的 MyAIPDF {} 升级到 {}。\n\n请先保存 PDF 并退出旧程序，然后选择要升级的 MyAIPDF.app。安装会保留旧程序备份和个人设置，不下载完整包。",
+        manifest.from_version, manifest.version
+    );
+    if rfd::MessageDialog::new().set_title("MyAIPDF 增量更新").set_description(description).set_buttons(rfd::MessageButtons::OkCancel).show()
+        != rfd::MessageDialogResult::Ok
+    {
+        return Ok(());
+    }
+    let Some(application) = rfd::FileDialog::new()
+        .set_title(format!("选择 {} 版 MyAIPDF.app", manifest.from_version))
+        .set_directory("/Applications")
+        .add_filter("Mac 应用", &["app"])
+        .pick_file()
+    else {
+        return Ok(());
+    };
+    let receipt = printcraft_update::install_delta_directory(&directory, &application)?;
+    let description = format!(
+        "已更新到 {}。\n旧程序备份：{}\n个人设置未变动。是否打开新版？",
+        manifest.version,
+        receipt.backup.as_ref().map_or_else(|| "无".into(), |p| p.display().to_string())
+    );
+    if rfd::MessageDialog::new().set_title("MyAIPDF 更新完成").set_description(description).set_buttons(rfd::MessageButtons::YesNo).show()
+        == rfd::MessageDialogResult::Yes
+    {
+        Command::new("/usr/bin/open").arg("-n").arg(&receipt.application).status().map_err(|_| "更新成功，请手动打开 MyAIPDF")?;
     }
     Ok(())
 }

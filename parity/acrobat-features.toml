@@ -2434,6 +2434,18 @@ evidence = ["crates/edit/src/tests.rs::replace_and_remove_restore_the_original_c
 notes = ""
 
 [[feature]]
+id = "edit.watermark-analyze-select-remove"
+title = "Analyze and explicitly remove separable watermark candidates"
+area = "C"
+tier = "P1"
+milestone = "M7"
+status = "partial"
+commands = ["watermark.analyze", "watermark.remove_selected"]
+tools = ["watermark_analyze", "watermark_remove"]
+evidence = ["crates/edit/src/tests.rs::watermark_analysis_removes_only_selected_content_and_rejects_stale_ids", "crates/edit/src/tests.rs::watermark_artifacts_and_image_candidates_exclude_full_page_scans_and_shared_text", "crates/automation/tests/automation.rs::watermark_analyze_choose_confirm_undo_save_and_reopen_through_tools", "crates/ui-egui/tests/watermarks.rs::watermark_panel_analysis_selection_confirmation_and_undo", "crates/ui-egui/tests/watermarks.rs::analysis_becomes_stale_after_an_edit"]
+notes = "Clearly marked Watermark artifacts, safely independent BT/ET text and bounded image/Form placements. Manual selection and confirmation, raw unselected bytes retained, stale analysis rejected, one undo and manual incremental save. No automatic deletion or confidence guarantee. Full-page scans excluded; nested-form text and flattened image watermarks are not independently removed. Not secure redaction."
+
+[[feature]]
 id = "edit.decoration-profiles"
 title = "Saved header/footer and watermark settings"
 area = "C"
@@ -3103,11 +3115,11 @@ title = "Page transitions"
 area = "D"
 tier = "P2"
 milestone = "M4"
-status = "planned"
-commands = []
-tools = []
-evidence = []
-notes = ""
+status = "shipped"
+commands = ["page.transitions"]
+tools = ["page_transitions"]
+evidence = ["crates/edit/src/tests.rs::production_transitions_and_printer_marks_survive_save", "crates/automation/tests/automation.rs::production_measurement_scan_and_mixed_creation_through_tools", "crates/ui-egui/tests/utilities.rs::utility_dialog_cancel_apply_save_and_undo"]
+notes = "None, Dissolve, Fade and Wipe /Trans dictionaries, selected pages, manual save and undo. Playback depends on a presentation-capable reader; the ordinary MyAIPDF viewer does not play transitions."
 
 [[feature]]
 id = "organize.page-tab-order"
@@ -4139,11 +4151,11 @@ title = "Distance measuring tool"
 area = "E"
 tier = "P2"
 milestone = "M12"
-status = "planned"
-commands = []
-tools = []
-evidence = []
-notes = ""
+status = "shipped"
+commands = ["measure.distance"]
+tools = ["measure_distance"]
+evidence = ["crates/engine/src/tests.rs::utilities_measure_create_enhance_and_failed_production_are_bounded_and_undoable", "crates/ui-egui/tests/utilities.rs::measured_drag_adds_real_distance_annotation_and_is_undoable", "crates/automation/tests/automation.rs::production_measurement_scan_and_mixed_creation_through_tools"]
+notes = "Two points, user-entered scale ratio, pt/mm/cm/in and PDF UserUnit; native drag creates an undoable, saveable line annotation containing the measured value. No snapping, perimeter, area or geographic measurements."
 
 [[feature]]
 id = "comment.measure-perimeter"
@@ -6571,7 +6583,19 @@ status = "planned"
 commands = []
 tools = []
 evidence = []
-notes = ""
+notes = "MyAIPDF now links this tool to the existing text-block editor for manual correction of a decodable OCR text layer. Automatic suspect detection and confidence review remain unimplemented; this is not a scan-image text editor."
+
+[[feature]]
+id = "ocr.scan-contrast-sharpen"
+title = "Enhance independent scanned page backgrounds"
+area = "I"
+tier = "P1"
+milestone = "M10"
+status = "partial"
+commands = ["ocr.enhance"]
+tools = ["scan_enhance"]
+evidence = ["crates/engine/src/tests.rs::utilities_measure_create_enhance_and_failed_production_are_bounded_and_undoable", "crates/automation/tests/automation.rs::production_measurement_scan_and_mixed_creation_through_tools", "crates/ui-egui/tests/utilities.rs::utility_dialog_cancel_apply_save_and_undo"]
+notes = "Contrast and mild unsharp masking on independent background images occupying at least 80 percent of a page, bounded to 100 pages and 20 megapixels per image. Preserve OCR text and body vectors; never rasterize text pages. Does not deskew, remove backgrounds or fix perspective."
 
 [[feature]]
 id = "ocr.adaptive-compression"
@@ -6799,11 +6823,11 @@ title = "Convert many files to PDF in one run"
 area = "J"
 tier = "P1"
 milestone = "M13"
-status = "planned"
-commands = []
-tools = []
-evidence = []
-notes = ""
+status = "partial"
+commands = ["create.multiple"]
+tools = ["doc_create_files"]
+evidence = ["crates/engine/src/tests.rs::utilities_measure_create_enhance_and_failed_production_are_bounded_and_undoable", "crates/automation/tests/automation.rs::production_measurement_scan_and_mixed_creation_through_tools"]
+notes = "Ordered PDFs, supported images and UTF-8 Latin text files become a new unsaved combined PDF. Unsupported text glyphs are rejected instead of silently becoming question marks. Originals stay unchanged. Does not import Office documents or arbitrary file types; existing-PDF Chinese editing is unaffected."
 
 [[feature]]
 id = "create.image-conversion-options"
@@ -6883,11 +6907,11 @@ title = "Export to Excel (.xlsx) with table detection"
 area = "J"
 tier = "P1"
 milestone = "M10"
-status = "planned"
-commands = []
-tools = []
-evidence = []
-notes = ""
+status = "partial"
+commands = ["export.xlsx"]
+tools = ["doc_export_office"]
+evidence = ["crates/export/src/lib.rs::xlsx_and_pptx_contain_real_office_parts_and_preserve_safe_text", "crates/automation/tests/automation.rs::exporting_to_excel_and_image_slides_through_tools"]
+notes = "Real SpreadsheetML workbook, one sheet per PDF page, heuristic table cells and remaining text paragraphs. Formulas are inactive inline strings. Not a layout clone; scanned tables need an existing text layer."
 
 [[feature]]
 id = "create.export-pptx"
@@ -6895,11 +6919,11 @@ title = "Export to PowerPoint (.pptx)"
 area = "J"
 tier = "P1"
 milestone = "M10"
-status = "planned"
-commands = []
-tools = []
-evidence = []
-notes = ""
+status = "partial"
+commands = ["export.pptx"]
+tools = ["doc_export_office"]
+evidence = ["crates/export/src/lib.rs::xlsx_and_pptx_contain_real_office_parts_and_preserve_safe_text", "crates/automation/tests/automation.rs::exporting_to_excel_and_image_slides_through_tools"]
+notes = "Real PresentationML package with a 120 dpi rendered PDF page image on each slide, aspect ratio retained and differing pages letterboxed. Does not reconstruct editable source text or vector shapes."
 
 [[feature]]
 id = "create.export-png"
@@ -8139,11 +8163,11 @@ title = "Convert colours"
 area = "L"
 tier = "P1"
 milestone = "M11"
-status = "planned"
-commands = []
-tools = []
-evidence = []
-notes = ""
+status = "partial"
+commands = ["prepress.convert_colors"]
+tools = ["prepress_vector_gray"]
+evidence = ["crates/edit/src/tests.rs::production_edits_copy_shared_forms_and_preserve_other_pages", "crates/automation/tests/automation.rs::production_measurement_scan_and_mixed_creation_through_tools"]
+notes = "Explicit vector/text DeviceRGB and DeviceCMYK operators become grayscale, including nested Form XObjects with copy-on-write resources. Images, ICC/spot colours and annotation appearances are unchanged; not press colour management."
 
 [[feature]]
 id = "print.ink-manager"
@@ -8175,11 +8199,11 @@ title = "Add printer marks (crop, bleed, registration, colour bars)"
 area = "L"
 tier = "P1"
 milestone = "M11"
-status = "planned"
-commands = []
-tools = []
-evidence = []
-notes = ""
+status = "partial"
+commands = ["prepress.marks"]
+tools = ["prepress_printer_marks"]
+evidence = ["crates/edit/src/tests.rs::production_transitions_and_printer_marks_survive_save", "crates/automation/tests/automation.rs::production_measurement_scan_and_mixed_creation_through_tools"]
+notes = "Four-corner crop marks only. Expand MediaBox/CropBox and retain the original crop as TrimBox without moving body content. No registration targets, colour bars or configurable bleed marks."
 
 [[feature]]
 id = "print.fix-hairlines"
@@ -8187,11 +8211,11 @@ title = "Fix hairlines"
 area = "L"
 tier = "P1"
 milestone = "M11"
-status = "planned"
-commands = []
-tools = []
-evidence = []
-notes = ""
+status = "partial"
+commands = ["prepress.hairlines"]
+tools = ["prepress_hairlines"]
+evidence = ["crates/edit/src/tests.rs::production_edits_copy_shared_forms_and_preserve_other_pages", "crates/automation/tests/automation.rs::production_measurement_scan_and_mixed_creation_through_tools"]
+notes = "Raise explicit w operators below the chosen minimum, including nested Forms. Width is in content-space points; CTM scaling, image lines, default widths and ExtGState widths are not corrected."
 
 [[feature]]
 id = "print.flattener-preview"
@@ -9395,11 +9419,11 @@ title = "AI provider interface (local model or own endpoint), off by default"
 area = "N"
 tier = "P2"
 milestone = "M13"
-status = "planned"
-commands = []
-tools = []
-evidence = []
-notes = ""
+status = "partial"
+commands = ["ai.ask"]
+tools = ["ai_models", "ai_chat"]
+evidence = ["crates/ai/src/lib.rs::compatible_models_and_chat_roundtrip_on_loopback", "crates/ui-egui/tests/ai.rs::chinese_ui_models_chat_confirm_undo_and_privacy", "crates/ui-egui/tests/ai.rs::settings_are_a_separate_modal_and_leave_the_chat_composer_visible", "crates/ui-egui/tests/ai.rs::only_known_qa_settings_are_removed_not_real_local_or_cloud_providers"]
+notes = "User-configured OpenAI-compatible models/chat endpoints, separate framed configuration modal and chat sidebar. Empty defaults, no installed model or listening service. Explicit requests only; PDF text consent, scoped confirmed proposals, no autosave. Actual capabilities and billing depend on the selected external service."
 
 [[feature]]
 id = "misc.ai-summary"

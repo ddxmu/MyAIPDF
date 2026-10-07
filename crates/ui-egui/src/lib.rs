@@ -24,6 +24,10 @@ mod crop;
 mod export_ui;
 mod js_ui;
 mod marks_ui;
+mod utility_ui;
+mod watermark_ui;
+pub use utility_ui::{Kind as UtilityKind, UtilityDraft};
+pub use watermark_ui::WatermarkState;
 mod ocr_ui;
 mod optimize_ui;
 mod search_ui;
@@ -145,6 +149,7 @@ pub enum QuickTool {
     MarqueeZoom,
     /// Edit ▸ Take a Snapshot.
     Snapshot,
+    Measure,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -161,6 +166,8 @@ pub enum Dialog {
     PageBoxes,
     /// Add / Update Header and Footer, Watermark, Background.
     Marks(printcraft_engine::MarkKind),
+    RemoveWatermarks,
+    Utility(UtilityKind),
     /// Export a PDF ▸ Image / Text.
     Export(export_ui::ExportKind),
     /// Fill & Sign ▸ Create signature (the drawing pad).
@@ -420,6 +427,8 @@ pub struct PrintCraftApp {
     pub boxes_draft: pageboxes::BoxesDraft,
     /// Header & footer / watermark / background dialog state.
     pub marks_draft: marks_ui::MarksDraft,
+    pub watermarks: WatermarkState,
+    pub utilities: UtilityDraft,
     /// Export dialog settings.
     pub export_draft: export_ui::ExportDraft,
     /// A running export's progress.
@@ -554,6 +563,8 @@ impl PrintCraftApp {
             protect_draft: Default::default(),
             boxes_draft: Default::default(),
             marks_draft: Default::default(),
+            watermarks: WatermarkState { all_pages: true, ..Default::default() },
+            utilities: Default::default(),
             export_draft: Default::default(),
             export_status: None,
             signature: None,
@@ -1005,6 +1016,7 @@ impl PrintCraftApp {
                 }
             }
             ("tools", _) => self.all_tools_expanded = value != "collapsed",
+            ("ai-settings", _) => self.ai.settings_open = value == "open",
             ("palette", _) => {
                 self.palette_open = true;
                 self.palette_query = value.to_string();
@@ -1066,6 +1078,7 @@ impl PrintCraftApp {
                     "sign" => QuickTool::SignArea { certify: false },
                     "marquee-zoom" => QuickTool::MarqueeZoom,
                     "snapshot" => QuickTool::Snapshot,
+                    "measure" => QuickTool::Measure,
                     "certify" => QuickTool::SignArea { certify: true },
                     custom if custom.starts_with("custom-stamp-") => {
                         let i: usize = custom[13..].parse().map_err(|_| format!("bad stamp {custom}"))?;
@@ -1112,6 +1125,9 @@ impl PrintCraftApp {
 
     fn shortcuts(&mut self, ctx: &egui::Context) {
         use egui::Key;
+        if self.ai.settings_open {
+            return;
+        }
         // "Save changes?" is modal: its keys are its own (⌘D is Don't save there, not Document
         // properties; Escape cancels it rather than clearing a selection), and nothing may run
         // underneath it. They are read here, before the canvas can consume them.
@@ -1230,6 +1246,9 @@ impl eframe::App for PrintCraftApp {
                 },
             );
             dialogs::show(self, &ctx);
+            if self.ai.settings_open {
+                ai_ui::settings_dialog(self, &ctx);
+            }
             return;
         }
         chrome::tab_strip(self, ui);
@@ -1251,6 +1270,9 @@ impl eframe::App for PrintCraftApp {
         self.process_pending_edits();
         palette::show(self, &ctx);
         dialogs::show(self, &ctx);
+        if self.ai.settings_open {
+            ai_ui::settings_dialog(self, &ctx);
+        }
         widgets::toast(self, &ctx);
     }
 }

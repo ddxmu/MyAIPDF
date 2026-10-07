@@ -89,6 +89,7 @@ impl PrintCraftApp {
             }
             "file.open" => self.open_dialog(),
             "page.combine" => self.combine_dialog(),
+            "create.multiple" => self.combine_dialog(),
             "file.save" => {
                 self.save_active(SaveTarget::InPlace);
             }
@@ -247,6 +248,13 @@ impl PrintCraftApp {
                 self.marks_draft.focused_box = 5;
                 self.dialog = Some(Dialog::Marks(printcraft_engine::MarkKind::HeaderFooter));
             }
+            "watermark.analyze" | "watermark.remove_selected" => {
+                self.left = crate::LeftPanel::Tool("watermark_remove");
+                self.left_open = true;
+                if id == "watermark.analyze" {
+                    self.analyze_watermarks();
+                }
+            }
             "edit.header_footer.remove" | "edit.watermark.remove" | "edit.background.remove" => {
                 use printcraft_engine::MarkKind as K;
                 let kind = match id {
@@ -381,6 +389,22 @@ impl PrintCraftApp {
             }
             "sign.panel" => self.right = Some(RightPanel::Signatures),
             "optimize.advanced" => self.dialog = Some(Dialog::Optimize),
+            "optimize.audit" => self.dialog = Some(Dialog::AuditSpace),
+            "page.transitions" | "prepress.convert_colors" | "prepress.hairlines" | "prepress.marks" | "ocr.enhance" | "measure.distance" => {
+                use crate::UtilityKind as K;
+                self.dialog = Some(Dialog::Utility(match id {
+                    "page.transitions" => K::Transitions,
+                    "prepress.convert_colors" => K::Gray,
+                    "prepress.hairlines" => K::Hairlines,
+                    "prepress.marks" => K::PrinterMarks,
+                    "ocr.enhance" => K::EnhanceScans,
+                    _ => K::Measure,
+                }));
+            }
+            "ocr.correct" => {
+                self.execute("edit.edit_text");
+                self.notify("点击已有 OCR 文字框修改识别文本并保存。只校正文字层，不重绘原扫描图像；无文字层时请先识别。");
+            }
             "view.fit_visible" => {
                 if let Some(i) = self.active
                     && let Err(e) = self.fit_visible(i)
@@ -410,6 +434,8 @@ impl PrintCraftApp {
             "export.docx" => self.export_office_dialog(printcraft_engine::compare::OfficeFormat::Docx),
             "export.html" => self.export_office_dialog(printcraft_engine::compare::OfficeFormat::Html),
             "export.rtf" => self.export_office_dialog(printcraft_engine::compare::OfficeFormat::Rtf),
+            "export.xlsx" => self.export_office_dialog(printcraft_engine::compare::OfficeFormat::Xlsx),
+            "export.pptx" => self.export_office_dialog(printcraft_engine::compare::OfficeFormat::Pptx),
             "form.prepare" => {
                 self.left = crate::LeftPanel::Tool("form");
                 self.left_open = true;
@@ -425,6 +451,10 @@ impl PrintCraftApp {
             "doc.compare" => self.dialog = Some(Dialog::CompareFiles),
             "standards.pdfa" => {
                 self.pdfa.issues = None;
+                self.dialog = Some(Dialog::PdfA);
+            }
+            "preflight.run" => {
+                self.pdfa_verify();
                 self.dialog = Some(Dialog::PdfA);
             }
             "actions.wizard" | "actions.distribution" | "actions.optimize_scans" => {

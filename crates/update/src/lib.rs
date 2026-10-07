@@ -7,12 +7,15 @@ use sha2::{Digest, Sha256};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
+pub mod delta;
+#[cfg(test)]
+mod delta_tests;
 #[cfg(target_os = "macos")]
 mod macos;
 #[cfg(test)]
 mod tests;
 
-pub const APP_VERSION: &str = "0.1.2";
+pub const APP_VERSION: &str = "0.1.3";
 pub const REPOSITORY: &str = "https://github.com/ddxmu/MyAIPDF";
 pub const RELEASES_PAGE: &str = "https://github.com/ddxmu/MyAIPDF/releases";
 pub const LATEST_API: &str = "https://api.github.com/repos/ddxmu/MyAIPDF/releases/latest";
@@ -64,6 +67,11 @@ fn valid_digest(s: &str) -> bool {
 }
 
 pub fn parse_release(body: &str) -> Result<Release, String> {
+    parse_release_for(body, APP_VERSION)
+}
+
+/// Select only a delta built for the caller's exact base; never fall back to a full DMG.
+pub fn parse_release_for(body: &str, current: &str) -> Result<Release, String> {
     if body.len() > 1 << 20 {
         return Err("GitHub 发布信息过大".into());
     }
@@ -80,14 +88,16 @@ pub fn parse_release(body: &str) -> Result<Release, String> {
         return Err("发布页不属于 ddxmu/MyAIPDF，已拒绝".into());
     }
     let assets = v["assets"].as_array().ok_or("GitHub 未返回安装包列表")?;
-    let found: Vec<_> = assets.iter().filter(|a| a["name"].as_str() == Some("MyAIPDF.dmg")).collect();
+    let version = tag.trim_start_matches(['v', 'V']);
+    let filename = delta_filename(version, current);
+    let found: Vec<_> = assets.iter().filter(|a| a["name"].as_str() == Some(filename.as_str())).collect();
     if found.len() > 1 {
         return Err("GitHub 返回了重复的安装包".into());
     }
     let asset = match found.first() {
         None => None,
         Some(a) => {
-            let url = format!("{RELEASES_PAGE}/download/{tag}/MyAIPDF.dmg");
+            let url = format!("{RELEASES_PAGE}/download/{tag}/{filename}");
             if a["browser_download_url"].as_str() != Some(url.as_str()) || a["state"].as_str() != Some("uploaded") {
                 return Err("安装包地址或上传状态无效".into());
             }
@@ -103,6 +113,10 @@ pub fn parse_release(body: &str) -> Result<Release, String> {
         notes: v["body"].as_str().unwrap_or_default().chars().take(8000).collect(),
         asset,
     })
+}
+
+pub fn delta_filename(version: &str, base: &str) -> String {
+    format!("MyAIPDF-{version}-from-{base}.delta.dmg")
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -204,8 +218,9 @@ pub fn download(release: &Release, directory: &Path, progress: impl Fn(u64, u64)
     {
         use std::io::Write;
         let asset = release.asset.as_ref().ok_or("此版本缺少可校验的 Mac 安装包，请查看 GitHub 发布页")?;
-        let expected = format!("{RELEASES_PAGE}/download/v{}/MyAIPDF.dmg", release.version);
-        let expected_without_v = format!("{RELEASES_PAGE}/download/{}/MyAIPDF.dmg", release.version);
+        let filename = delta_filename(&release.version, APP_VERSION);
+        let expected = format!("{RELEASES_PAGE}/download/v{}/{filename}", release.version);
+        let expected_without_v = format!("{RELEASES_PAGE}/download/{}/{filename}", release.version);
         if asset.url != expected && asset.url != expected_without_v {
             return Err("安装包地址不属于指定仓库".into());
         }
@@ -233,7 +248,7 @@ pub fn download(release: &Release, directory: &Path, progress: impl Fn(u64, u64)
             }
         }
         let mut response = response.ok_or("GitHub 下载跳转次数过多")?;
-        let path = directory.join("MyAIPDF.dmg");
+        let path = directory.join(filename);
         let mut options = std::fs::OpenOptions::new();
         options.write(true).create_new(true);
         #[cfg(unix)]
@@ -282,5 +297,18 @@ pub fn install(package: &Package, application: &Path) -> Result<Installed, Strin
     {
         let _ = application;
         Err("此安装包仅适用于 Apple Silicon macOS".into())
+    }
+}
+
+/// Used by the first delta's signed, user-opened installer and by headless verification.
+pub fn install_delta_directory(directory: &Path, application: &Path) -> Result<Installed, String> {
+    #[cfg(target_os = "macos")]
+    {
+        macos::install_directory(directory, application, None)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (directory, application);
+        Err("增量安装仅适用于 Apple Silicon macOS".into())
     }
 }

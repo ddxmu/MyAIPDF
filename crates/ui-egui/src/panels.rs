@@ -18,7 +18,13 @@ pub fn left_panel(app: &mut PrintCraftApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
     egui::Panel::left("tool_panel")
         .resizable(false)
-        .exact_size(if app.left == LeftPanel::Tool("ai") { 390.0 } else { 272.0 })
+        .exact_size(if app.left == LeftPanel::Tool("ai") {
+            420.0
+        } else if app.left == LeftPanel::Tool("watermark_remove") {
+            350.0
+        } else {
+            272.0
+        })
         .frame(
             egui::Frame::NONE
                 .fill(t.panel)
@@ -29,6 +35,7 @@ pub fn left_panel(app: &mut PrintCraftApp, ui: &mut egui::Ui) {
             LeftPanel::AllTools => all_tools(app, ui, &t),
             LeftPanel::Tool(id) => match catalog::group(id) {
                 Some(g) if g.id == "ai" => crate::ai_ui::panel(app, ui),
+                Some(g) if g.id == "watermark_remove" => crate::watermark_ui::panel(app, ui),
                 Some(g) => tool_detail(app, ui, &t, g),
                 None => app.left = LeftPanel::AllTools,
             },
@@ -190,7 +197,6 @@ fn tool_detail(app: &mut PrintCraftApp, ui: &mut egui::Ui, t: &Tokens, g: &'stat
                     17.0,
                     if ready { hue(g) } else { t.text_faint },
                 );
-                ui.painter().text(rect.left_center() + vec2(34.0, 0.0), Align2::LEFT_CENTER, label, theme::regular(13.0), fg);
                 let (chip, fill, cfg) = match item.availability {
                     Availability::Ready => ("Ready", Color32::from_rgb(0xDD, 0xF3, 0xE4), Color32::from_rgb(0x1E, 0x7B, 0x43)),
                     Availability::Planned(m) => (m, t.pressed, t.text_muted),
@@ -200,9 +206,15 @@ fn tool_detail(app: &mut PrintCraftApp, ui: &mut egui::Ui, t: &Tokens, g: &'stat
                 let font = theme::semibold(9.5);
                 let w = ui.fonts_mut(|f| f.layout_no_wrap(chip.to_string(), font.clone(), cfg).size().x);
                 let r = Rect::from_center_size(rect.right_center() - vec2(w / 2.0 + 10.0, 0.0), vec2(w + 10.0, 16.0));
+                // Reserve badge space: longer Chinese tool names must not paint over it.
+                let mut job = egui::text::LayoutJob::simple(label.to_owned(), theme::regular(13.0), fg, (r.left() - rect.left() - 42.0).max(20.0));
+                job.wrap.max_rows = 1;
+                job.wrap.break_anywhere = true;
+                let galley = ui.fonts_mut(|f| f.layout_job(job));
+                ui.painter().galley(egui::pos2(rect.left() + 34.0, rect.center().y - galley.size().y / 2.0), galley, fg);
                 ui.painter().rect_filled(r, CornerRadius::same(4), fill);
                 ui.painter().text(r.center(), Align2::CENTER_CENTER, chip, font, cfg);
-                if resp.on_hover_text(item.command).clicked() {
+                if resp.on_hover_text(format!("{label}\n{}", item.command)).clicked() {
                     run = Some(item.command);
                 }
             }

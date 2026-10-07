@@ -2,9 +2,9 @@ use super::*;
 use serde_json::json;
 
 fn release_json() -> Value {
-    json!({"draft":false,"prerelease":false,"tag_name":"v0.1.2","html_url":format!("{RELEASES_PAGE}/tag/v0.1.2"),"body":"新版说明","assets":[{
-        "name":"MyAIPDF.dmg","state":"uploaded","size":3,"digest":format!("sha256:{}","a".repeat(64)),
-        "browser_download_url":format!("{RELEASES_PAGE}/download/v0.1.2/MyAIPDF.dmg")
+    json!({"draft":false,"prerelease":false,"tag_name":"v0.1.4","html_url":format!("{RELEASES_PAGE}/tag/v0.1.4"),"body":"新版说明","assets":[{
+        "name":delta_filename("0.1.4",APP_VERSION),"state":"uploaded","size":3,"digest":format!("sha256:{}","a".repeat(64)),
+        "browser_download_url":format!("{RELEASES_PAGE}/download/v0.1.4/{}",delta_filename("0.1.4",APP_VERSION))
     }]})
 }
 
@@ -12,13 +12,13 @@ fn release_json() -> Value {
 fn answers_are_read_and_only_our_stable_release_is_offered() {
     let value = release_json();
     let r = parse_release(&value.to_string()).unwrap();
-    assert_eq!(r.version, "0.1.2");
+    assert_eq!(r.version, "0.1.4");
     assert_eq!(r.notes, "新版说明");
     assert_eq!(r.asset.unwrap().sha256, "a".repeat(64));
     for (key, invalid) in [
         ("draft", json!(true)),
         ("prerelease", json!(true)),
-        ("html_url", json!("https://github.com/other/app/releases/tag/v0.1.2")),
+        ("html_url", json!("https://github.com/other/app/releases/tag/v0.1.4")),
         ("tag_name", json!("../../nightly")),
     ] {
         let mut bad = value.clone();
@@ -42,13 +42,27 @@ fn answers_are_read_and_only_our_stable_release_is_offered() {
 }
 
 #[test]
+fn deltas_match_the_exact_base_and_never_fall_back_to_full_packages() {
+    let mut value = release_json();
+    value["assets"].as_array_mut().unwrap().push(json!({
+        "name":"MyAIPDF.dmg","state":"uploaded","size":100,
+        "digest":format!("sha256:{}","b".repeat(64)),
+        "browser_download_url":format!("{RELEASES_PAGE}/download/v0.1.4/MyAIPDF.dmg")
+    }));
+    assert!(parse_release_for(&value.to_string(), APP_VERSION).unwrap().asset.is_some());
+    assert!(parse_release_for(&value.to_string(), "0.1.1").unwrap().asset.is_none());
+    value["assets"].as_array_mut().unwrap().remove(0);
+    assert!(parse_release(&value.to_string()).unwrap().asset.is_none());
+}
+
+#[test]
 fn corrupted_or_symlinked_packages_are_rejected_before_install() {
     let directory = private_directory(&std::env::temp_dir()).unwrap();
     let path = directory.join("MyAIPDF.dmg");
     std::fs::write(&path, b"abc").unwrap();
     let package = Package {
         path: path.clone(),
-        version: "0.1.2".into(),
+        version: "0.1.4".into(),
         size: 3,
         sha256: "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad".into(),
     };
@@ -91,6 +105,6 @@ fn check_has_no_authentication_or_pdf_payload() {
         write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len())
             .unwrap();
     });
-    assert_eq!(check_url(&format!("http://{address}/latest")).unwrap().version, "0.1.2");
+    assert_eq!(check_url(&format!("http://{address}/latest")).unwrap().version, "0.1.4");
     worker.join().unwrap();
 }

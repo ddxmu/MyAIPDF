@@ -25,5 +25,7 @@ default = ["mcp"]
 mcp = ["dep:base64"]
 
 [dev-dependencies]
+printcraft-cos = { workspace = true }
+printcraft-model = { workspace = true }
 printcraft-fonts = { workspace = true }
 image = { version = "0.25", default-features = false, features = ["jpeg"] }

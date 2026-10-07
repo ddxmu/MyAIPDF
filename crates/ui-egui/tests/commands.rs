@@ -47,6 +47,7 @@ fn harness() -> Harness<'static, PrintCraftApp> {
 const PICKERS: &[&str] = &[
     "file.open",
     "page.combine",
+    "create.multiple",
     "page.insert",
     "file.save_as",
     "create.file",
@@ -59,6 +60,8 @@ const PICKERS: &[&str] = &[
     "export.docx",
     "export.html",
     "export.rtf",
+    "export.xlsx",
+    "export.pptx",
 ];
 
 #[test]

@@ -39,6 +39,8 @@ pub fn show(app: &mut PrintCraftApp, ctx: &egui::Context) {
     let mut protect_now = false;
     let mut boxes_now = false;
     let mut marks_now = false;
+    let mut watermarks_now = false;
+    let mut utility_now = false;
     let mut export_now = false;
     let mut props_now = false;
     let mut field_props_now = false;
@@ -885,6 +887,18 @@ pub fn show(app: &mut PrintCraftApp, ctx: &egui::Context) {
                 close = apply || cancel;
                 return;
             }
+            Dialog::RemoveWatermarks => {
+                let (apply, cancel) = crate::watermark_ui::confirm(ui, app);
+                watermarks_now = apply;
+                close = apply || cancel;
+                return;
+            }
+            Dialog::Utility(kind) => {
+                let (apply, cancel) = crate::utility_ui::body(ui, app, kind);
+                utility_now = apply;
+                close = apply || cancel;
+                return;
+            }
             Dialog::PageBoxes => {
                 let (apply, cancel) = crate::pageboxes::body(ui, app, &t);
                 boxes_now = apply;
@@ -1187,6 +1201,12 @@ pub fn show(app: &mut PrintCraftApp, ctx: &egui::Context) {
         let count = app.session.get(id).map(|d| d.info.pages.len()).unwrap_or(0);
         let edit = crate::marks_ui::edit(&app.marks_draft, kind, count);
         app.apply_edit(edit);
+    }
+    if watermarks_now {
+        app.remove_selected_watermarks();
+    }
+    if utility_now && let Dialog::Utility(kind) = dialog {
+        app.apply_utility(kind);
     }
     if boxes_now && let Some((i, id)) = app.active_ids() {
         let count = app.session.get(id).map(|d| d.info.pages.len()).unwrap_or(0);

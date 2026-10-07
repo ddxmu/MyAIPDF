@@ -72,6 +72,10 @@ Read this before choosing work. The feature table above counts what exists; this
 
 ## Where we're lacking and where we're going
 
+MyAIPDF fork, 2026-10-07 (0.1.3): AI configuration is a separate, framed modal; chat and composer remain in the sidebar. Defaults are unconfigured, and only the known QA fixture settings are removed. Manual updates now select exact-base binary deltas, verify complete base/payload/result inventories and the reconstructed signature, then preserve the prior application in a recoverable swap. No full-package fallback or startup network requests. Old 0.1.2 uses the signed standalone delta installer for the one-time transition.
+
+The same fork release adds conservative watermark analysis, explicit selection/confirmation and stale-state rejection with undo/save/reopen tests. It excludes whole-page scan deletion and does not claim secure redaction. Cloud/stamp/attachment/JavaScript/audit catalogue entries now link to their existing working handlers. New bounded utilities cover transitions, mixed PDF/image/text creation, extracted XLSX, image-slide PPTX, scan contrast/sharpening, two-point distance annotation, explicit vector grayscale, crop marks and hairline widths. Shared Form resources are copy-on-write. Advanced certificate/timestamp, tagging/geospatial/index and PDF/X/UA workflows remain genuinely unimplemented; no blanket M4–M13 parity claim.
+
 MyAIPDF fork, 2026-10-07 (0.1.2): existing paragraph editing now embeds approved Simplified Chinese TrueType subsets when the source font lacks new glyphs, wraps unspaced Chinese and retains explicit newlines. UI regression tests cover Edit entry, saving a pending draft, close protection and failure retaining input. Mixed Chinese/Latin interface baselines and compact line metrics are checked at 1×/2×. Editing remains partial: outlined/scanned text, nested Form text, missing mappings and per-character mixed styling are not solved. No Acrobat-equivalence claim.
 
 The gaps that matter most, in priority order. Agents: prefer these over adding P2/P3 features, and check `parity/acrobat-features.toml` notes for the specifics of each.

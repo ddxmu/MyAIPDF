@@ -96,7 +96,13 @@ impl PrintCraftApp {
     /// Add picked files to the Combine files list (and show it).
     pub(crate) fn stage_combine(&mut self, files: Vec<(String, Vec<u8>)>) {
         for (name, bytes) in files {
-            let bytes = Arc::new(bytes);
+            let bytes = match self.session.file_as_pdf(&name, bytes) {
+                Ok(b) => b,
+                Err(e) => {
+                    self.notify(format!("Couldn't add {name}: {e}"));
+                    continue;
+                }
+            };
             match printcraft_render::inspect(bytes.clone(), None) {
                 Ok(info) => self.combine_draft.push(CombineFile { name, bytes, pages: info.pages.len(), range: String::new() }),
                 Err(e) => self.notify(format!("Couldn't add {name}: {e}")),

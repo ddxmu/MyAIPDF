@@ -32,10 +32,132 @@ fn fixture() -> Document {
     Document::open(Arc::new(out)).unwrap()
 }
 
+#[test]
+fn watermark_analysis_removes_only_selected_content_and_rejects_stale_ids() {
+    let mut doc = fixture();
+    let page = printcraft_model::pages(&doc)[0].obj;
+    let bytes = b"BT /F1 12 Tf 20 680 Td (Keep this body) Tj ET\nq /Fade gs BT /F1 40 Tf 0.707 0.707 -0.707 0.707 100 150 Tm (DRAFT) Tj ET Q\nBT /F1 12 Tf 20 640 Td (Keep this too) Tj ET";
+    let stream = doc.add(Object::Stream(Stream::flate(Dict::new(), bytes)));
+    let mut fade = Dict::new();
+    fade.set(b"ca".to_vec(), Object::Real(0.3));
+    let mut ext = Dict::new();
+    ext.set(b"Fade".to_vec(), Object::Dict(fade));
+    doc.update_dict(page, |d| {
+        d.set(b"Contents".to_vec(), Object::Ref(stream));
+        let mut res = Dict::new();
+        let mut fonts = Dict::new();
+        fonts.set(b"F1".to_vec(), Object::Ref(printcraft_cos::ObjRef::new(8, 0)));
+        res.set(b"Font".to_vec(), Object::Dict(fonts));
+        res.set(b"ExtGState".to_vec(), Object::Dict(ext));
+        d.set(b"Resources".to_vec(), Object::Dict(res));
+    })
+    .unwrap();
+    let found = watermarks::analyze(&doc, &[0], false).unwrap();
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].label, "DRAFT");
+    let selected = vec![found[0].id.clone()];
+    assert_eq!(watermarks::remove(&mut doc, &[0], &selected).unwrap(), 1);
+    let text: Vec<_> = text_lines(&reopen(&doc), 0).unwrap().into_iter().map(|l| l.text).collect();
+    assert_eq!(text, ["Keep this body", "Keep this too"]);
+    assert!(watermarks::remove(&mut doc, &[0], &selected).is_err());
+}
+
+#[test]
+fn watermark_artifacts_and_image_candidates_exclude_full_page_scans_and_shared_text() {
+    let mut doc = fixture();
+    let page = printcraft_model::pages(&doc)[0].obj;
+    let mut im = Dict::new();
+    im.set(b"Subtype".to_vec(), Object::name("Image"));
+    im.set(b"Width".to_vec(), Object::Int(1));
+    im.set(b"Height".to_vec(), Object::Int(1));
+    im.set(b"ColorSpace".to_vec(), Object::name("DeviceGray"));
+    im.set(b"BitsPerComponent".to_vec(), Object::Int(8));
+    let img = doc.add(Object::Stream(Stream::from_raw(im, vec![128])));
+    let mut xo = Dict::new();
+    xo.set(b"I".to_vec(), Object::Ref(img));
+    let bytes = b"q 600 0 0 800 0 0 cm /I Do Q\nq 40 0 0 40 120 80 cm /I Do Q\nBT /F1 12 Tf 20 600 Td (Body) Tj ( DRAFT) Tj ET\n/Artifact << /Subtype /Watermark >> BDC q BT /F1 28 Tf 30 300 Td (SAMPLE) Tj ET Q EMC";
+    let content = doc.add(Object::Stream(Stream::flate(Dict::new(), bytes)));
+    doc.update_dict(page, |d| {
+        d.set(b"Contents".to_vec(), Object::Ref(content));
+        let mut res = Dict::new();
+        let mut fonts = Dict::new();
+        fonts.set(b"F1".to_vec(), Object::Ref(printcraft_cos::ObjRef::new(8, 0)));
+        res.set(b"Font".to_vec(), Object::Dict(fonts));
+        res.set(b"XObject".to_vec(), Object::Dict(xo));
+        d.set(b"Resources".to_vec(), Object::Dict(res));
+    })
+    .unwrap();
+    let found = watermarks::analyze(&doc, &[0], true).unwrap();
+    assert_eq!(found.iter().filter(|c| c.kind == "image").count(), 1, "never offer the full-page scan");
+    let artifact = found.iter().find(|c| c.kind == "artifact").unwrap();
+    watermarks::remove(&mut doc, &[0], std::slice::from_ref(&artifact.id)).unwrap();
+    assert!(text_lines(&reopen(&doc), 0).unwrap().iter().any(|l| l.text == "Body DRAFT"));
+    assert!(!text_lines(&reopen(&doc), 0).unwrap().iter().any(|l| l.text == "SAMPLE"));
+    assert_eq!(page_images(&doc, 0).unwrap().len(), 2);
+}
+
 fn reopen(doc: &Document) -> Document {
     let bytes = write_incremental(doc, &SaveOptions::default()).unwrap();
     hayro_syntax::Pdf::new(bytes.clone()).expect("parses");
     Document::open(Arc::new(bytes)).unwrap()
+}
+
+#[test]
+fn production_edits_copy_shared_forms_and_preserve_other_pages() {
+    use production::Settings;
+    let mut doc = fixture();
+    let mut form = Dict::new();
+    form.set(b"Subtype".to_vec(), Object::name("Form"));
+    form.set(b"BBox".to_vec(), Object::Array([0, 0, 100, 100].into_iter().map(Object::Int).collect()));
+    let original = b"1 0 0 rg 0 w 10 10 m 90 90 l S";
+    let form_ref = doc.add(Object::Stream(Stream::flate(form, original)));
+    let content = doc.add(Object::Stream(Stream::flate(Dict::new(), b"q /Fm Do Q BT /F1 12 Tf 20 150 Td (KEEP) Tj ET")));
+    let mut xo = Dict::new();
+    xo.set(b"Fm".to_vec(), Object::Ref(form_ref));
+    doc.update_dict(printcraft_cos::ObjRef::new(6, 0), |d| d.set(b"XObject".to_vec(), Object::Dict(xo))).unwrap();
+    let pages = printcraft_model::pages(&doc);
+    for p in &pages[..2] {
+        doc.update_dict(p.obj, |d| d.set(b"Contents".to_vec(), Object::Ref(content))).unwrap();
+    }
+    production::apply(&mut doc, &[0], &Settings::VectorGray).unwrap();
+    production::apply(&mut doc, &[0], &Settings::Hairlines { minimum: 0.5 }).unwrap();
+    let doc = reopen(&doc);
+    let forms: Vec<_> = printcraft_model::pages(&doc)[..2]
+        .iter()
+        .map(|p| {
+            let res = doc.resolve(p.dict.get(b"Resources").unwrap());
+            let xo = doc.resolve(res.as_dict().unwrap().get(b"XObject").unwrap());
+            stream_bytes(&doc, xo.as_dict().unwrap().get(b"Fm").unwrap()).unwrap()
+        })
+        .collect();
+    let text = String::from_utf8(forms[0].clone()).unwrap();
+    assert!(text.contains("0.2126 g") && text.contains("0.5 w"), "{text}");
+    assert_eq!(forms[1], original);
+    assert_eq!(stream_bytes(&doc, &Object::Ref(form_ref)).unwrap(), original, "shared source untouched");
+    assert_eq!(text_lines(&doc, 0).unwrap()[0].text, "KEEP");
+}
+
+#[test]
+fn production_transitions_and_printer_marks_survive_save() {
+    use production::Settings;
+    let mut doc = fixture();
+    production::apply(&mut doc, &[0], &Settings::Transitions { style: "Fade".into(), seconds: 1.5 }).unwrap();
+    production::apply(&mut doc, &[0], &Settings::PrinterMarks { margin: 36.0 }).unwrap();
+    let mut doc = reopen(&doc);
+    let pages = printcraft_model::pages(&doc);
+    assert_eq!(pages[0].crop(&doc), [-36.0, -36.0, 636.0, 836.0]);
+    let transition = doc.resolve(pages[0].dict.get(b"Trans").unwrap());
+    assert_eq!(transition.as_dict().unwrap().name(b"S"), Some(b"Fade".as_slice()));
+    assert_eq!(pages[1].crop(&doc), [0.0, 0.0, 600.0, 800.0]);
+    assert!(streams(&doc, 0).last().unwrap().contains("0.5 w"));
+    let contents = doc.resolve(pages[0].dict.get(b"Contents").unwrap());
+    let mark = doc.resolve(contents.as_array().unwrap().last().unwrap());
+    assert!(matches!(&*mark,Object::Stream(s) if s.dict.name(b"PCMark")==Some(b"PrinterMarks")));
+    assert_eq!(text_lines(&doc, 0).unwrap()[0].text, "Hi");
+    production::apply(&mut doc, &[0], &Settings::Transitions { style: "none".into(), seconds: 1.0 }).unwrap();
+    assert!(!printcraft_model::pages(&reopen(&doc))[0].dict.contains(b"Trans"));
+    assert!(production::apply(&mut doc, &[0], &Settings::Hairlines { minimum: f64::NAN }).is_err());
+    assert!(production::apply(&mut doc, &[0], &Settings::PrinterMarks { margin: 0.0 }).is_err());
 }
 
 /// The decoded content streams of a page, in order.

@@ -74,19 +74,146 @@ pub(super) fn install(package: &Package, application: &Path) -> Result<Installed
     }
 }
 
-fn activate(mount: &Path, parent: &Path, target: &Path, version: &str) -> Result<Installed, String> {
-    let source = mount.join("MyAIPDF.app");
-    check_bundle(&source, Some(version))?;
-    let nonce = getrandom::u64().map_err(|_| "无法准备应用更新")?;
+fn activate(mount: &Path, _parent: &Path, target: &Path, version: &str) -> Result<Installed, String> {
+    let installer = mount.join(super::delta::INSTALLER);
+    if property(&installer, "CFBundleIdentifier")? != "local.myaipdf.delta" || property(&installer, "CFBundleShortVersionString")? != version {
+        return Err("增量安装助手的标识或版本无效".into());
+    }
+    run("/usr/bin/codesign", &["--verify".as_ref(), "--deep".as_ref(), "--strict".as_ref(), installer.as_os_str()])?;
+    install_directory(&installer.join("Contents/Resources/delta"), target, Some(version))
+}
+
+fn closed(target: &Path) -> Result<(), String> {
+    let r = Command::new("/usr/sbin/lsof").arg("-t").arg(target.join("Contents/MacOS/MyAIPDF")).output().map_err(|_| "无法确认旧程序已退出")?;
+    if r.status.success() || !r.stdout.is_empty() {
+        return Err("请先保存 PDF 并退出全部 MyAIPDF 窗口，再安装增量更新".into());
+    }
+    if r.status.code() != Some(1) {
+        return Err("无法确认旧程序已退出，未替换应用".into());
+    }
+    Ok(())
+}
+
+pub(super) fn install_directory(directory: &Path, application: &Path, version: Option<&str>) -> Result<Installed, String> {
+    use super::delta::{Kind, Manifest, snapshot};
+    if !cfg!(target_arch = "aarch64") {
+        return Err("此增量包仅适用于 Apple Silicon Mac".into());
+    }
+    if application.file_name().and_then(|s| s.to_str()) != Some("MyAIPDF.app")
+        || !application.is_absolute()
+        || !std::fs::symlink_metadata(directory).is_ok_and(|m| m.is_dir())
+    {
+        return Err("必须选择现有的 MyAIPDF.app，增量数据目录不能是链接".into());
+    }
+    let parent = application.parent().ok_or("安装位置无效")?.canonicalize().map_err(|_| "应用目录不可访问")?;
+    let target = parent.join("MyAIPDF.app");
+    let manifest = Manifest::read(directory)?;
+    if version.is_some_and(|v| v != manifest.version) {
+        return Err("增量版本与发布记录不一致".into());
+    }
+    check_bundle(&target, Some(&manifest.from_version))
+        .map_err(|_| format!("此增量包需要未改动的 {} 版 MyAIPDF；未下载完整包，旧程序未变动。", manifest.from_version))?;
+    closed(&target)?;
+    let before = manifest.expected(false);
+    if snapshot(&target)? != before {
+        return Err("基础版本文件校验不一致，不能应用此增量包；旧程序未变动".into());
+    }
+    manifest.verify_payloads(directory)?;
+    let nonce = getrandom::u64().map_err(|_| "无法准备增量更新")?;
     let staged = parent.join(format!(".MyAIPDF-staged-{nonce:016x}.app"));
     let backup = parent.join(format!(".MyAIPDF-backup-{nonce:016x}.app"));
     if staged.exists() || backup.exists() {
-        return Err("更新缓存位置已存在，请重试".into());
+        return Err("更新暂存位置已存在，请重试".into());
     }
-    std::fs::create_dir(&staged).map_err(|_| "应用目录不可写，请手动将安装包中的 MyAIPDF 拖入应用程序")?;
-    run("/usr/bin/ditto", &[source.as_os_str(), staged.as_os_str()])?;
-    check_bundle(&staged, Some(version))?;
-    replace_staged(&staged, target, &backup)
+    std::fs::create_dir(&staged).map_err(|_| "应用目录不可写，请选择你有权限的 MyAIPDF.app")?;
+    let work = super::private_directory(&std::env::temp_dir())?;
+    let outcome = (|| {
+        run("/usr/bin/ditto", &[target.as_os_str(), staged.as_os_str()])?;
+        for (index, file) in manifest.files.iter().enumerate() {
+            let output = staged.join(&file.path);
+            if file.after.is_none() {
+                std::fs::remove_file(&output).map_err(|_| "无法移除旧版的已废弃文件")?;
+                continue;
+            }
+            if let Some(payload) = &file.payload {
+                let source = directory.join(&payload.file);
+                let temp = work.join(format!("patched-{index}"));
+                match payload.kind {
+                    Kind::Copy => {
+                        std::fs::copy(source, &temp).map_err(|_| "无法写入新增文件")?;
+                    }
+                    Kind::Bsdiff => apply_patch_file(&output, &temp, &source, file.after.as_ref().ok_or("增量缺少目标信息")?.size)?,
+                }
+                let folder = output.parent().ok_or("增量目标位置无效")?;
+                std::fs::create_dir_all(folder).map_err(|_| "无法创建增量目录")?;
+                std::fs::rename(&temp, &output).map_err(|_| "无法写入增量结果")?;
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    let executable = file.after.as_ref().is_some_and(|f| f.executable);
+                    std::fs::set_permissions(&output, std::fs::Permissions::from_mode(if executable { 0o755 } else { 0o644 }))
+                        .map_err(|_| "无法设置应用文件权限")?;
+                }
+            }
+        }
+        if snapshot(&staged)? != manifest.expected(true) {
+            return Err("增量合成后的文件校验失败，旧程序未变动".into());
+        }
+        check_bundle(&staged, Some(&manifest.version))?;
+        // Recheck the base and running state immediately before the recoverable swap.
+        closed(&target)?;
+        if snapshot(&target)? != before {
+            return Err("旧程序在准备期间发生变化，已停止更新".into());
+        }
+        replace_staged(&staged, &target, &backup)
+    })();
+    if outcome.is_err() {
+        let _ = std::fs::remove_dir_all(&staged);
+    }
+    let _ = std::fs::remove_dir_all(work);
+    outcome
+}
+
+fn apply_patch_file(old: &Path, output: &Path, patch: &Path, expected_size: u64) -> Result<(), String> {
+    use std::io::Read;
+    use std::process::Stdio;
+    let mut header = [0u8; 32];
+    std::fs::File::open(patch).and_then(|mut f| f.read_exact(&mut header)).map_err(|_| "增量二进制头不完整")?;
+    if header.get(..8) != Some(b"BSDIFF40") {
+        return Err("增量二进制格式无效".into());
+    }
+    let number = |offset| -> Result<u64, String> {
+        let b = header.get(offset..offset + 8).ok_or("增量头无效")?;
+        if b.get(7).is_none_or(|v| v & 0x80 != 0) {
+            return Err("增量头包含负长度".into());
+        }
+        let array: [u8; 8] = b.try_into().map_err(|_| "增量头无效")?;
+        Ok(u64::from_le_bytes(array))
+    };
+    let length = std::fs::metadata(patch).map_err(|_| "无法读取增量大小")?.len();
+    if number(24)? != expected_size || number(8)?.checked_add(number(16)?).and_then(|n| n.checked_add(32)).is_none_or(|n| n > length) {
+        return Err("增量二进制长度与清单不一致".into());
+    }
+    let mut child = Command::new("/usr/bin/bspatch")
+        .arg(old)
+        .arg(output)
+        .arg(patch)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|_| "无法运行系统增量合成工具")?;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
+    loop {
+        if let Some(status) = child.try_wait().map_err(|_| "无法检查增量合成状态")? {
+            return if status.success() { Ok(()) } else { Err("增量合成未通过，旧程序未变动".into()) };
+        }
+        if std::time::Instant::now() >= deadline || std::fs::metadata(output).is_ok_and(|m| m.len() > expected_size) {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err("增量合成超时或超过大小限制，旧程序未变动".into());
+        }
+        std::thread::sleep(std::time::Duration::from_millis(40));
+    }
 }
 
 /// Same-directory renames: preserve the original until the new verified bundle is ready.

@@ -118,7 +118,11 @@ impl PrintCraftApp {
     fn pick_files(&mut self, purpose: FilePurpose, multiple: bool) {
         #[cfg(not(target_arch = "wasm32"))]
         {
-            let dialog = rfd::FileDialog::new().add_filter("PDF", &["pdf"]);
+            let dialog = if purpose == FilePurpose::Combine {
+                rfd::FileDialog::new().add_filter("PDF、图片和文本", &["pdf", "png", "jpg", "jpeg", "tif", "tiff", "bmp", "gif", "txt"])
+            } else {
+                rfd::FileDialog::new().add_filter("PDF", &["pdf"])
+            };
             let paths = if multiple { dialog.pick_files().unwrap_or_default() } else { dialog.pick_file().into_iter().collect() };
             let mut files = Vec::new();
             for p in paths {
@@ -397,7 +401,13 @@ impl PrintCraftApp {
         let Some(doc) = self.session.get(id) else { return };
         let stem = doc.name.trim_end_matches(".pdf").trim_end_matches(".PDF").to_string();
         let ext = format.extension();
-        let bytes = doc.export_office(format);
+        let bytes = match doc.export_office(format) {
+            Ok(b) => b,
+            Err(e) => {
+                self.notify(e);
+                return;
+            }
+        };
         #[cfg(not(target_arch = "wasm32"))]
         {
             let path = match self.save_override.clone() {

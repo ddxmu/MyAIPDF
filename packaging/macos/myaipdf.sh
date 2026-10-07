@@ -2,9 +2,11 @@
 # Package already-tested native binaries. Never replaces an existing output.
 set -euo pipefail
 MYAI_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-MYAI_OUTPUT="${1:?Usage: bash packaging/macos/myaipdf.sh /absolute/path/MyAIPDF.dmg}"
-case "$MYAI_OUTPUT" in /*.dmg) ;; *) echo "Output must be an absolute .dmg path" >&2; exit 2 ;; esac
-if [ -e "$MYAI_OUTPUT" ] || [ -L "$MYAI_OUTPUT" ]; then echo "Refusing to overwrite: $MYAI_OUTPUT" >&2; exit 2; fi
+MYAI_OUTPUT="${1:?Usage: bash packaging/macos/myaipdf.sh --app-only | /absolute/path/MyAIPDF.dmg}"
+if [ "$MYAI_OUTPUT" != '--app-only' ]; then
+    case "$MYAI_OUTPUT" in /*.dmg) ;; *) echo "Output must be an absolute .dmg path" >&2; exit 2 ;; esac
+    if [ -e "$MYAI_OUTPUT" ] || [ -L "$MYAI_OUTPUT" ]; then echo "Refusing to overwrite: $MYAI_OUTPUT" >&2; exit 2; fi
+fi
 test -x "$MYAI_ROOT/target/release/printcraft"
 test -x "$MYAI_ROOT/target/release/printcraft-cli"
 test -x "$MYAI_ROOT/target/release/myaipdf-updater"
@@ -38,6 +40,7 @@ codesign --force --sign - --timestamp=none "$MYAI_APP/Contents/MacOS/MyAIPDF"
 codesign --force --sign - --timestamp=none "$MYAI_APP"
 codesign --verify --strict --deep --verbose=2 "$MYAI_APP"
 file "$MYAI_APP/Contents/MacOS/MyAIPDF"
+if [ "$MYAI_OUTPUT" = '--app-only' ]; then echo "Application staging: $MYAI_APP"; exit 0; fi
 # APFS preserves the signed bundle without makehybrid's empty FinderInfo attributes.
 hdiutil create -srcfolder "$MYAI_STAGE" -fs APFS -volname "MyAIPDF" -format UDZO -imagekey zlib-level=9 "$MYAI_WORK/MyAIPDF.dmg"
 codesign --force --sign - --timestamp=none "$MYAI_WORK/MyAIPDF.dmg"

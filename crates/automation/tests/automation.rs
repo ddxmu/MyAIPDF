@@ -98,6 +98,20 @@ fn update_install_requires_confirmation_root_and_saved_documents() {
 }
 
 #[test]
+fn local_delta_tools_require_confirmation_root_and_saved_documents() {
+    let dir = workdir("delta-guards");
+    let mut a = auto(&dir);
+    let mut args = json!({"directory":"delta","application":"MyAIPDF.app","confirm":false});
+    assert!(a.call("update_apply_delta", &args).unwrap_err().to_string().contains("confirm:true"));
+    args["confirm"] = json!(true);
+    args["directory"] = json!(std::env::temp_dir().to_string_lossy());
+    assert!(a.call("update_apply_delta", &args).unwrap_err().to_string().contains("outside"));
+    let doc = ok(&mut a, "doc_open", json!({"path":"a.pdf"}))["doc"].clone();
+    ok(&mut a, "page_rotate", json!({"doc":doc,"degrees":90}));
+    assert!(a.call("update_apply_delta", &args).unwrap_err().to_string().contains("unsaved"));
+}
+
+#[test]
 fn ai_plan_is_scoped_atomic_one_undo_and_never_autosaves() {
     use printcraft_ai::Action;
     let dir = workdir("myaipdf-plan");
@@ -616,6 +630,33 @@ fn headers_watermarks_and_backgrounds_through_tools() {
     assert!(matches!(a.call("doc_remove_marks", &json!({ "doc": doc, "kind": "watermark" })), Err(ToolError::Failed(_))));
     assert!(matches!(a.call("doc_header_footer", &json!({ "doc": doc })), Err(ToolError::Failed(_))), "no text");
     ok(&mut a, "doc_save", json!({ "doc": doc, "path": "marked.pdf" }));
+}
+
+#[test]
+fn watermark_analyze_choose_confirm_undo_save_and_reopen_through_tools() {
+    let dir = workdir("selected-watermarks");
+    let mut a = auto(&dir);
+    let doc = ok(&mut a, "doc_open", json!({"path":"a.pdf"}))["doc"].as_u64().unwrap();
+    ok(&mut a, "doc_watermark", json!({"doc":doc,"pages":[1,2],"text":"DRAFT","opacity":0.25}));
+    ok(&mut a, "doc_watermark", json!({"doc":doc,"pages":[1],"text":"KEEP ME","opacity":0.4,"rotation":0,"font_size":16}));
+    let before = page_text(&mut a, doc);
+    let found = ok(&mut a, "watermark_analyze", json!({"doc":doc,"pages":[2]}));
+    let ids: Vec<_> = found["candidates"].as_array().unwrap().iter().map(|c| c["id"].clone()).collect();
+    assert!(!ids.is_empty());
+    assert!(a.call("watermark_remove", &json!({"doc":doc,"pages":[2],"candidates":ids,"confirm":false})).is_err());
+    ok(&mut a, "watermark_remove", json!({"doc":doc,"pages":[2],"candidates":ids,"confirm":true}));
+    let text = page_text(&mut a, doc);
+    assert_eq!(text[0], before[0], "unselected page is identical");
+    assert_eq!(text[1], "Page 2");
+    assert!(a.call("watermark_remove", &json!({"doc":doc,"pages":[2],"candidates":ids,"confirm":true})).is_err());
+    ok(&mut a, "edit_undo", json!({"doc":doc}));
+    assert_eq!(page_text(&mut a, doc)[1], before[1]);
+    ok(&mut a, "edit_redo", json!({"doc":doc}));
+    ok(&mut a, "doc_save", json!({"doc":doc,"path":"watermark-result.pdf"}));
+    let second = ok(&mut a, "doc_open", json!({"path":"watermark-result.pdf"}))["doc"].as_u64().unwrap();
+    assert_eq!(page_text(&mut a, second)[1], "Page 2");
+    assert_eq!(std::fs::read(dir.join("a.pdf")).unwrap(), fixture(3), "original untouched");
+    std::fs::remove_dir_all(dir).unwrap();
 }
 
 #[test]
@@ -1609,4 +1650,60 @@ fn exporting_to_word_html_and_rtf() {
     assert!(std::fs::read(dir.join("a.docx")).unwrap().starts_with(b"PK"));
     assert!(std::fs::read_to_string(dir.join("a.rtf")).unwrap().contains("Page 2"));
     assert!(a.call("doc_export_office", &json!({ "doc": doc, "path": "a.xyz" })).is_err());
+}
+
+#[test]
+fn exporting_to_excel_and_image_slides_through_tools() {
+    let dir = workdir("xlsx-pptx");
+    let mut a = auto(&dir);
+    let doc = ok(&mut a, "doc_open", json!({"path":"a.pdf"}))["doc"].as_u64().unwrap();
+    for ext in ["xlsx", "pptx"] {
+        assert_eq!(ok(&mut a, "doc_export_office", json!({"doc":doc,"path":format!("a.{ext}")}))["format"], ext);
+    }
+    let xlsx = std::fs::read(dir.join("a.xlsx")).unwrap();
+    let pptx = std::fs::read(dir.join("a.pptx")).unwrap();
+    assert!(xlsx.starts_with(b"PK") && xlsx.windows(24).any(|w| w == b"xl/worksheets/sheet3.xml"));
+    assert!(pptx.starts_with(b"PK") && pptx.windows(19).any(|w| w == b"ppt/media/page3.png"));
+    assert!(a.call("doc_export_office", &json!({"doc":doc,"path":"../outside.xlsx"})).is_err());
+    assert_eq!(std::fs::read(dir.join("a.pdf")).unwrap(), fixture(3));
+}
+
+#[test]
+fn production_measurement_scan_and_mixed_creation_through_tools() {
+    let dir = workdir("utilities");
+    let mut a = auto(&dir);
+    let doc = ok(&mut a, "doc_open", json!({"path":"a.pdf"}))["doc"].as_u64().unwrap();
+    let measured = ok(&mut a, "measure_distance", json!({"doc":doc,"page":1,"from":[10,10],"to":[82,10],"unit":"mm"}));
+    assert!((measured["distance"].as_f64().unwrap() - 25.4).abs() < 0.00001);
+    for (tool, extra) in [
+        ("page_transitions", json!({"style":"Fade"})),
+        ("prepress_vector_gray", json!({})),
+        ("prepress_hairlines", json!({"minimum":0.75})),
+        ("prepress_printer_marks", json!({"margin":36})),
+    ] {
+        let mut args = extra;
+        args["doc"] = json!(doc);
+        args["pages"] = json!([2]);
+        ok(&mut a, tool, args);
+        ok(&mut a, "edit_undo", json!({"doc":doc}));
+        assert_eq!(page_text(&mut a, doc), ["Page 1", "Page 2", "Page 3"]);
+    }
+    ok(&mut a, "page_transitions", json!({"doc":doc,"pages":[2],"style":"Fade","seconds":1.5}));
+    ok(&mut a, "doc_save", json!({"doc":doc,"path":"transitions.pdf"}));
+    let cos = printcraft_cos::Document::open(std::sync::Arc::new(std::fs::read(dir.join("transitions.pdf")).unwrap())).unwrap();
+    assert!(printcraft_model::pages(&cos)[1].dict.contains(b"Trans"));
+    assert!(!printcraft_model::pages(&cos)[0].dict.contains(b"Trans"));
+    std::fs::write(dir.join("note.txt"), "Mixed UTF-8 text page").unwrap();
+    let rgba: Vec<_> = (0..100).flat_map(|i| [100 + (i % 30) as u8, 110, 120, 255]).collect();
+    std::fs::write(dir.join("scan.png"), printcraft_engine::export::encode_png(10, 10, &rgba).unwrap()).unwrap();
+    let mixed = ok(&mut a, "doc_create_files", json!({"paths":["b.pdf","note.txt","scan.png"]}))["doc"].as_u64().unwrap();
+    assert_eq!(a.session().get(printcraft_engine::DocId(mixed)).unwrap().info.pages.len(), 4);
+    assert_eq!(ok(&mut a, "scan_enhance", json!({"doc":mixed,"pages":[4],"contrast":30,"sharpen":true}))["enhanced"], 1);
+    ok(&mut a, "doc_save", json!({"doc":mixed,"path":"mixed.pdf"}));
+    let reopened = ok(&mut a, "doc_open", json!({"path":"mixed.pdf"}))["doc"].as_u64().unwrap();
+    assert!(page_text(&mut a, reopened)[2].contains("Mixed UTF-8 text page"));
+    assert!(a.call("scan_enhance", &json!({"doc":doc,"pages":[1]})).is_err());
+    assert!(a.call("measure_distance", &json!({"doc":doc,"page":1,"from":[-1,0],"to":[20,0]})).is_err());
+    assert!(a.call("doc_create_files", &json!({"paths":["../outside.pdf"]})).is_err());
+    assert_eq!(std::fs::read(dir.join("a.pdf")).unwrap(), fixture(3));
 }

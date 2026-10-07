@@ -34,6 +34,7 @@ pub struct State {
     pub include_text: bool,
     pub whole_document: bool,
     pub show_key: bool,
+    pub settings_open: bool,
     pub status: String,
     pub pending: Option<Pending>,
     receiver: Option<mpsc::Receiver<Event>>,
@@ -52,6 +53,16 @@ impl State {
             p.selected = p.selected.min(p.providers.len().saturating_sub(1));
             for provider in &mut p.providers {
                 provider.models.truncate(4096);
+                // Remove only this fork's old fixed-response QA fixture, never a real local API.
+                if provider.base_url.trim_end_matches('/') == "http://127.0.0.1:18473/v1"
+                    && matches!(provider.model.as_str(), "qa-chat-model" | "qa-secondary-model")
+                    && provider.models.iter().all(|m| matches!(m.as_str(), "qa-chat-model" | "qa-secondary-model"))
+                {
+                    provider.base_url.clear();
+                    provider.model.clear();
+                    provider.models.clear();
+                    provider.remember_key = false;
+                }
                 if provider.remember_key {
                     provider.api_key = printcraft_ai::load_key(provider).unwrap_or_default();
                 }
@@ -62,7 +73,178 @@ impl State {
 }
 
 pub fn panel(app: &mut PrintCraftApp, ui: &mut egui::Ui) {
-    egui::ScrollArea::vertical().id_salt("ai_workspace").auto_shrink([false, false]).show(ui, |ui| panel_content(app, ui));
+    ui.scope(|ui| {
+        form_style(ui);
+        egui::ScrollArea::vertical().id_salt("ai_workspace").auto_shrink([false, false]).show(ui, |ui| panel_content(app, ui));
+    });
+}
+
+// Scoped to AI: visible fields/selection controls without changing the PDF workspace theme.
+fn form_style(ui: &mut egui::Ui) {
+    let t = Tokens::get(ui.ctx());
+    let s = ui.style_mut();
+    s.spacing.item_spacing = egui::vec2(8.0, 9.0);
+    s.spacing.button_padding = egui::vec2(12.0, 8.0);
+    s.visuals.widgets.inactive.bg_stroke =
+        egui::Stroke::new(1.0, if t.dark() { egui::Color32::from_rgb(90, 99, 114) } else { egui::Color32::from_rgb(179, 188, 204) });
+    s.visuals.widgets.hovered.bg_stroke = egui::Stroke::new(1.2, t.accent);
+    s.visuals.widgets.active.bg_stroke = egui::Stroke::new(1.4, t.accent);
+    s.visuals.widgets.open.bg_stroke = egui::Stroke::new(1.2, t.accent);
+    s.text_styles.insert(egui::TextStyle::Body, crate::theme::regular(14.0));
+    s.text_styles.insert(egui::TextStyle::Button, crate::theme::medium(14.0));
+}
+
+fn primary(ui: &mut egui::Ui, label: &str, enabled: bool) -> egui::Response {
+    let t = Tokens::get(ui.ctx());
+    ui.add_enabled(enabled, egui::Button::new(RichText::new(label).color(egui::Color32::WHITE)).fill(t.accent).min_size(egui::vec2(92.0, 34.0)))
+}
+
+pub(crate) fn settings_dialog(app: &mut PrintCraftApp, ctx: &egui::Context) {
+    let t = Tokens::get(ctx);
+    let busy = app.ai.busy();
+    let mut close = false;
+    let modal = egui::Modal::new(egui::Id::new("ai_settings_dialog")).show(ctx, |ui| {
+        ui.set_width((ctx.content_rect().width() - 72.0).clamp(300.0, 500.0));
+        form_style(ui);
+        ui.label(RichText::new("AI 接口设置").font(crate::theme::semibold(20.0)));
+        ui.label(RichText::new("填写自己的 API 地址与密钥，再拉取并选择对话模型。").color(t.text_muted));
+        ui.separator();
+        egui::ScrollArea::vertical().id_salt("ai_settings_scroll").max_height((ctx.content_rect().height() - 280.0).max(150.0)).show(ui, |ui| {
+            ui.add_enabled_ui(!busy, |ui| {
+                let selected = app.ai.preferences.selected;
+                let name = app.ai.preferences.providers.get(selected).map(|p| p.name.clone()).unwrap_or_default();
+                ui.label(RichText::new("选择接口").strong());
+                ui.horizontal(|ui| {
+                    egui::ComboBox::from_id_salt("ai_provider").selected_text(name).width(ui.available_width() - 105.0).show_ui(ui, |ui| {
+                        for (i, p) in app.ai.preferences.providers.iter().enumerate() {
+                            ui.selectable_value(&mut app.ai.preferences.selected, i, &p.name);
+                        }
+                    });
+                    if app.ai.preferences.providers.len() < 16 && ui.button("新增接口").clicked() {
+                        let n = app.ai.preferences.providers.len() + 1;
+                        let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or_default();
+                        app.ai.preferences.providers.push(Provider {
+                            id: format!("provider-{stamp}-{n}"),
+                            name: format!("AI 接口 {n}"),
+                            ..Provider::default()
+                        });
+                        app.ai.preferences.selected = n - 1;
+                    }
+                });
+                if selected != app.ai.preferences.selected {
+                    app.ai.history.clear();
+                    app.ai.pending = None;
+                    app.ai.status.clear();
+                    app.ai.show_key = false;
+                }
+                let Some(p) = app.ai.preferences.providers.get_mut(app.ai.preferences.selected) else { return };
+                let label = ui.label("接口名称");
+                ui.add(egui::TextEdit::singleline(&mut p.name).id_salt("ai_name").margin(egui::vec2(10.0, 8.0)).desired_width(f32::INFINITY))
+                    .labelled_by(label.id);
+                let label = ui.label("API 地址（OpenAI 兼容）");
+                let old = p.base_url.clone();
+                ui.add(
+                    egui::TextEdit::singleline(&mut p.base_url)
+                        .id_salt("ai_url")
+                        .margin(egui::vec2(10.0, 8.0))
+                        .hint_text("https://你的服务地址/v1")
+                        .desired_width(f32::INFINITY),
+                )
+                .labelled_by(label.id);
+                if old != p.base_url {
+                    p.api_key.clear();
+                    p.models.clear();
+                    p.model.clear();
+                    p.remember_key = false;
+                }
+                let label = ui.label("AI 密钥");
+                ui.horizontal(|ui| {
+                    ui.add(
+                        egui::TextEdit::singleline(&mut p.api_key)
+                            .password(!app.ai.show_key)
+                            .id_salt("ai_key")
+                            .margin(egui::vec2(10.0, 8.0))
+                            .hint_text("填写服务商提供的 API Key")
+                            .desired_width(ui.available_width() - 76.0),
+                    )
+                    .labelled_by(label.id);
+                    ui.checkbox(&mut app.ai.show_key, "显示");
+                });
+                ui.checkbox(&mut p.remember_key, "保存密钥到 macOS 钥匙串");
+                ui.add_space(2.0);
+                let mut fetch = false;
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("对话模型").strong());
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.add_enabled(!p.base_url.trim().is_empty(), egui::Button::new("拉取模型")).clicked() {
+                            fetch = true;
+                        }
+                    });
+                });
+                egui::ComboBox::from_id_salt("ai_model_list")
+                    .selected_text(if p.model.is_empty() { "请选择模型" } else { &p.model })
+                    .width(ui.available_width())
+                    .height(220.0)
+                    .show_ui(ui, |ui| {
+                        for m in &p.models {
+                            ui.selectable_value(&mut p.model, m.clone(), m);
+                        }
+                        if p.models.is_empty() {
+                            ui.label("先点击“拉取模型”，或在下方手动填写。");
+                        }
+                    });
+                let label = ui.label("模型 ID（可手动填写）");
+                ui.add(
+                    egui::TextEdit::singleline(&mut p.model)
+                        .id_salt("ai_model")
+                        .margin(egui::vec2(10.0, 8.0))
+                        .hint_text("填写服务商支持的模型 ID")
+                        .desired_width(f32::INFINITY),
+                )
+                .labelled_by(label.id);
+                let provider = p.clone();
+                if fetch {
+                    app.fetch_ai_models(provider);
+                }
+            });
+        });
+        ui.add_enabled_ui(!busy, |ui| {
+            let Some(p) = app.ai.preferences.providers.get_mut(app.ai.preferences.selected) else { return };
+            ui.horizontal(|ui| {
+                if primary(ui, "保存接口设置", true).clicked() {
+                    let result = if p.remember_key { printcraft_ai::save_key(p) } else { printcraft_ai::forget_key(p) };
+                    app.ai.status = match result {
+                        Ok(()) => "接口已保存；密钥不写入普通配置文件".into(),
+                        Err(e) => e,
+                    };
+                }
+                if ui.button("忘记已存密钥").clicked() {
+                    app.ai.status = match printcraft_ai::forget_key(p) {
+                        Ok(()) => {
+                            p.api_key.clear();
+                            p.remember_key = false;
+                            "已删除保存的密钥".into()
+                        }
+                        Err(e) => e,
+                    };
+                }
+            });
+        });
+        if !app.ai.status.is_empty() {
+            ui.label(RichText::new(&app.ai.status).small().color(t.accent_text));
+        }
+        ui.separator();
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("MyAIPDF 不安装或运行本地 AI 模型。").small().color(t.text_muted));
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                close = ui.button("完成设置").clicked();
+            });
+        });
+    });
+    if close || (modal.should_close() && !busy) {
+        app.ai.settings_open = false;
+        app.ai.show_key = false;
+    }
 }
 
 fn panel_content(app: &mut PrintCraftApp, ui: &mut egui::Ui) {
@@ -75,97 +257,21 @@ fn panel_content(app: &mut PrintCraftApp, ui: &mut egui::Ui) {
     });
     ui.label(RichText::new("阅读、总结、翻译，并协助操作 PDF").small().color(t.text_muted));
     let busy = app.ai.busy();
-    egui::CollapsingHeader::new("AI 模型接口设置").default_open(true).show(ui, |ui| {
-        ui.add_enabled_ui(!busy, |ui| {
-            let selected = app.ai.preferences.selected;
-            let name = app.ai.preferences.providers.get(selected).map(|p| p.name.clone()).unwrap_or_default();
-            ui.horizontal(|ui| {
-                egui::ComboBox::from_id_salt("ai_provider").selected_text(name).width(210.0).show_ui(ui, |ui| {
-                    for (i, p) in app.ai.preferences.providers.iter().enumerate() {
-                        ui.selectable_value(&mut app.ai.preferences.selected, i, &p.name);
-                    }
-                });
-                if app.ai.preferences.providers.len() < 16 && ui.small_button("新增接口").clicked() {
-                    let n = app.ai.preferences.providers.len() + 1;
-                    let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or_default();
-                    app.ai.preferences.providers.push(Provider {
-                        id: format!("provider-{stamp}-{n}"),
-                        name: format!("AI 接口 {n}"),
-                        ..Provider::default()
-                    });
-                    app.ai.preferences.selected = n - 1;
+    ui.add_space(4.0);
+    egui::Frame::NONE.fill(t.hover).stroke(egui::Stroke::new(1.0, t.border)).corner_radius(8).inner_margin(12).show(ui, |ui| {
+        ui.horizontal(|ui| {
+            ui.allocate_ui_with_layout(egui::vec2((ui.available_width() - 114.0).max(120.0), 40.0), egui::Layout::top_down(egui::Align::Min), |ui| {
+                let provider = app.ai.preferences.providers.get(app.ai.preferences.selected);
+                ui.add(egui::Label::new(RichText::new(provider.map_or("尚未配置接口", |p| p.name.as_str())).strong()).truncate());
+                let model =
+                    provider.filter(|p| !p.base_url.is_empty() && !p.model.is_empty()).map_or("选择接口与对话模型", |p| p.model.as_str());
+                ui.add(egui::Label::new(RichText::new(model).small().color(t.text_muted)).truncate());
+            });
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.button("接口设置").clicked() {
+                    app.ai.settings_open = true;
                 }
             });
-            if selected != app.ai.preferences.selected {
-                app.ai.history.clear();
-                app.ai.pending = None;
-                app.ai.status.clear();
-            }
-            let Some(p) = app.ai.preferences.providers.get_mut(app.ai.preferences.selected) else { return };
-            let name_label = ui.label("接口名称");
-            ui.add(egui::TextEdit::singleline(&mut p.name).id_salt("ai_name").desired_width(f32::INFINITY)).labelled_by(name_label.id);
-            let url_label = ui.label("API 地址（OpenAI 兼容）");
-            let old = p.base_url.clone();
-            ui.add(egui::TextEdit::singleline(&mut p.base_url).id_salt("ai_url").hint_text("https://服务器/v1").desired_width(f32::INFINITY))
-                .labelled_by(url_label.id);
-            if old != p.base_url {
-                p.api_key.clear();
-                p.models.clear();
-                p.model.clear();
-                p.remember_key = false;
-            }
-            let key_label = ui.label("AI 密钥");
-            ui.horizontal(|ui| {
-                ui.add(
-                    egui::TextEdit::singleline(&mut p.api_key)
-                        .password(!app.ai.show_key)
-                        .id_salt("ai_key")
-                        .hint_text("本地模型可留空")
-                        .desired_width(265.0),
-                )
-                .labelled_by(key_label.id);
-                ui.checkbox(&mut app.ai.show_key, "显示");
-            });
-            ui.checkbox(&mut p.remember_key, "保存密钥到 macOS 钥匙串");
-            let fetch = ui.button("拉取模型").clicked();
-            ui.horizontal(|ui| {
-                ui.label("模型");
-                egui::ComboBox::from_id_salt("ai_model_list")
-                    .selected_text(if p.model.is_empty() { "请选择模型" } else { &p.model })
-                    .width(265.0)
-                    .height(220.0)
-                    .show_ui(ui, |ui| {
-                        for m in &p.models {
-                            ui.selectable_value(&mut p.model, m.clone(), m);
-                        }
-                    });
-            });
-            let model_label = ui.label("模型 ID（可手动填写）");
-            ui.add(egui::TextEdit::singleline(&mut p.model).id_salt("ai_model").hint_text("也可手动填写模型 ID").desired_width(f32::INFINITY))
-                .labelled_by(model_label.id);
-            ui.horizontal(|ui| {
-                if ui.button("保存接口设置").clicked() {
-                    let result = if p.remember_key { printcraft_ai::save_key(p) } else { printcraft_ai::forget_key(p) };
-                    app.ai.status = match result {
-                        Ok(()) => "接口已保存；密钥不写入普通配置文件".into(),
-                        Err(e) => e,
-                    };
-                }
-                if ui.small_button("忘记已存密钥").clicked() {
-                    app.ai.status = match printcraft_ai::forget_key(p) {
-                        Ok(()) => {
-                            p.api_key.clear();
-                            p.remember_key = false;
-                            "已删除保存的密钥".into()
-                        }
-                        Err(e) => e,
-                    };
-                }
-            });
-            let provider = p.clone();
-            if fetch {
-                app.fetch_ai_models(provider);
-            }
         });
     });
     ui.separator();
@@ -229,11 +335,14 @@ fn panel_content(app: &mut PrintCraftApp, ui: &mut egui::Ui) {
             app.ai.status = "已取消，文档未修改".into();
         }
     }
-    let h = (ui.available_height() - 140.0).clamp(100.0, 280.0);
-    egui::ScrollArea::vertical().id_salt("ai_chat_history").max_height(h).auto_shrink([false, false]).stick_to_bottom(true).show(ui, |ui| {
+    ui.add_space(4.0);
+    ui.label(RichText::new("对话记录").font(crate::theme::semibold(14.5)));
+    let h = (ui.available_height() - 212.0).max(84.0);
+    egui::Frame::NONE.fill(t.pasteboard).stroke(egui::Stroke::new(1.0, t.border)).corner_radius(8).inner_margin(12).show(ui, |ui| {
+    egui::ScrollArea::vertical().id_salt("ai_chat_history").min_scrolled_height(h).max_height(h).auto_shrink([false, false]).stick_to_bottom(true).show(ui, |ui| {
         if app.ai.history.is_empty() {
             ui.label(
-                RichText::new("设置接口与模型后即可提问。\n例如：总结文档、翻译当前页、旋转第 2 页、填写表单。\nAI 回答仅供参考，请核对重要信息。")
+                RichText::new("开始与 AI 协作\n\n点击“接口设置”，连接你自己的模型。\n然后输入问题，或选择上方快捷指令。\n\nAI 修改须你确认，原文件不会自动保存。")
                     .color(t.text_muted),
             );
         }
@@ -246,17 +355,19 @@ fn panel_content(app: &mut PrintCraftApp, ui: &mut egui::Ui) {
             ui.add_space(7.0);
         }
     });
+    });
     let prompt_label = ui.label("问题或 PDF 处理要求");
     ui.add(
         egui::TextEdit::multiline(&mut app.ai.input)
             .id_salt("ai_prompt")
+            .margin(egui::vec2(10.0, 10.0))
             .desired_rows(3)
             .desired_width(f32::INFINITY)
             .hint_text("输入问题或 PDF 处理要求…"),
     )
     .labelled_by(prompt_label.id);
     ui.horizontal(|ui| {
-        if ui.add_enabled(!busy && !app.ai.input.trim().is_empty(), egui::Button::new("发送给 AI")).clicked() {
+        if primary(ui, "发送给 AI", !busy && !app.ai.input.trim().is_empty()).clicked() {
             app.send_ai();
         }
         if ui.add_enabled(!busy, egui::Button::new("清空对话")).clicked() {

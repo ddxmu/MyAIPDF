@@ -21,7 +21,7 @@ pub fn start(package: &Package) -> Result<(), String> {
     }
     let mut output = helper_file.open(&helper).map_err(|_| "无法准备更新助手")?;
     let mut source =
-        std::fs::File::open(bundle.join("Contents/MacOS/myaipdf-updater")).map_err(|_| "应用缺少更新助手，请从 GitHub 下载完整安装包")?;
+        std::fs::File::open(bundle.join("Contents/MacOS/myaipdf-updater")).map_err(|_| "应用缺少更新助手，请使用对应版本增量包内的安装助手")?;
     std::io::copy(&mut source, &mut output).map_err(|_| "无法复制更新助手")?;
     output.sync_all().map_err(|_| "无法保存更新助手")?;
     drop(output);

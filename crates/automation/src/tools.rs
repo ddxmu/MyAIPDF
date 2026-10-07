@@ -110,13 +110,15 @@ pub fn tools() -> Vec<ToolDef> {
     vec![
         t("update_check", "检查 MyAIPDF 更新", "Explicit GitHub request for ddxmu/MyAIPDF's latest stable release. No credentials or PDF contents are sent.")
             .ro().cmd("help.check_updates").with(schema(json!({}), &[])),
-        t("update_download", "下载 MyAIPDF 更新", "Fetch the latest stable release from ddxmu/MyAIPDF into a new private directory under out_dir. SHA-256 verified; does not install.")
+        t("update_download", "下载 MyAIPDF 增量更新", "Fetch only the latest stable binary delta matching this exact version from ddxmu/MyAIPDF into a new private directory under out_dir. SHA-256 verified; never falls back to a full package; does not install.")
             .with(schema(json!({"out_dir":path_arg()}), &["out_dir"])),
         t("update_install", "安装 MyAIPDF 更新", "Install a verified package into the exact, closed MyAIPDF.app. Requires confirm:true and no unsaved documents. Preserves the old app backup; honors --root for both paths.")
             .destructive().cmd("help.install_update").with(schema(json!({
                 "path":path_arg(),"application":path_arg(),"version":{"type":"string"},"sha256":{"type":"string"},
                 "size":{"type":"integer","minimum":1},"confirm":{"type":"boolean"}
             }), &["path","application","version","sha256","size","confirm"])),
+        t("update_apply_delta", "安装已验证的本地增量数据", "Apply a version-bound delta directory to an exact, closed MyAIPDF.app. Requires confirm:true and no unsaved documents; verifies base, payloads, output and signature, preserves a backup and honors --root. Never launches the app.")
+            .destructive().with(schema(json!({"directory":path_arg(),"application":path_arg(),"confirm":{"type":"boolean"}}), &["directory","application","confirm"])),
         t("ai_models", "获取 AI 模型列表", "Explicit request to an OpenAI-compatible /models endpoint. Does not send PDF contents. Secrets are never returned.")
             .ro().with(schema(json!({"api_url":{"type":"string"},"api_key":{"type":"string"}}), &["api_url"])),
         t("ai_chat", "AI 协助 PDF 处理", "Send explicit prompt and optional context to the configured AI API. Returns advice and a reviewed operation proposal; NEVER executes it or saves a document.")
@@ -706,6 +708,26 @@ pub fn tools() -> Vec<ToolDef> {
         t("doc_remove_marks", "Remove header & footer, watermark or background", "Remove every header and footer, watermark or background PrintCraft (or a compatible tool) added. Undoable.")
             .destructive()
             .with(schema(json!({ "doc": doc(), "kind": { "type": "string", "enum": ["header_footer", "watermark", "background"] } }), &["doc", "kind"])),
+        t("watermark_analyze", "分析水印候选", "Analyze independent text/image/Form placements and explicitly marked watermark artifacts. Nothing is deleted. Candidates have byte-bound IDs, reasons and page rectangles (top-left points). include_all offers all safely separable objects; full-page scans and text embedded inside body paragraphs are excluded.")
+            .ro().cmd("watermark.analyze")
+            .with(schema(json!({ "doc": doc(), "pages": pages("to analyze; default all, at most 500"), "include_all": { "type": "boolean" } }), &["doc"])),
+        t("watermark_remove", "删除选定水印", "Remove only candidate IDs from a fresh analysis over the same pages. Requires confirm true. Byte-bound IDs reject stale results; a failed edit changes nothing. One undo step. Save manually; original scan pixels are never erased.")
+            .cmd("watermark.remove_selected")
+            .with(schema(json!({ "doc": doc(), "pages": pages("same pages as analysis"), "candidates": { "type": "array", "items": { "type": "string" }, "minItems": 1 }, "confirm": { "type": "boolean" } }), &["doc", "candidates", "confirm"])),
+        t("page_transitions","页面切换","Write a PDF /Trans dictionary for selected pages; viewers that support presentation transitions may play it. none removes the transition. Undoable, save manually.")
+            .cmd("page.transitions").with(schema(json!({"doc":doc(),"pages":pages("default all"),"style":{"type":"string","enum":["none","Dissolve","Fade","Wipe"]},"seconds":{"type":"number","minimum":0.1,"maximum":30}}),&["doc"])),
+        t("prepress_vector_gray","文字与矢量转灰度","Convert explicit DeviceRGB/CMYK operators, including nested Form XObjects. Selected pages are isolated from shared content. Images, ICC, spot colors and annotation appearances are unchanged. Not a color-managed press conversion. Undoable.")
+            .cmd("prepress.convert_colors").with(schema(json!({"doc":doc(),"pages":pages("default all")}),&["doc"])),
+        t("prepress_hairlines","修复细线","Raise explicit line widths below minimum (default 0.5) in page streams and nested Forms. Width is in PDF content coordinates, not guaranteed output width after transforms. Undoable.")
+            .cmd("prepress.hairlines").with(schema(json!({"doc":doc(),"pages":pages("default all"),"minimum":{"type":"number","minimum":0.01,"maximum":10}}),&["doc"])),
+        t("prepress_printer_marks","添加裁切标记","Add four-corner crop marks. Expand media/crop boxes by margin (default 36 pt), retain the original crop as TrimBox; body content stays at its original coordinates. Undoable.")
+            .cmd("prepress.marks").with(schema(json!({"doc":doc(),"pages":pages("default all"),"margin":{"type":"number","minimum":18,"maximum":144}}),&["doc"])),
+        t("scan_enhance","增强扫描件","Enhance contrast and optional sharpening of independent full-page scans; do not rasterize text pages. Keep OCR text and placement, max 100 pages/20 million pixels per image. Undoable.")
+            .cmd("ocr.enhance").with(schema(json!({"doc":doc(),"pages":pages("default all"),"contrast":{"type":"number","minimum":-50,"maximum":100},"sharpen":{"type":"boolean"}}),&["doc"])),
+        t("measure_distance","测量距离","Measure two displayed top-left points on a page. Honors PDF UserUnit and ratio (default 1). Units pt, mm (default), cm or in. Does not create a document edit.")
+            .ro().cmd("measure.distance").with(schema(json!({"doc":doc(),"page":{"type":"integer","minimum":1},"from":point(),"to":point(),"ratio":{"type":"number","exclusiveMinimum":0,"maximum":1000000},"unit":{"type":"string","enum":["pt","mm","cm","in"]}}),&["doc","page","from","to"])),
+        t("doc_create_files","从多个文件创建 PDF","Create an unsaved document by converting and combining PDF, supported images and UTF-8 .txt inputs in order. Max 100 files / 256 MB. Source files and current documents are unchanged. No Office import claim.")
+            .cmd("create.multiple").with(schema(json!({"paths":{"type":"array","items":{"type":"string"},"minItems":1,"maxItems":100}}),&["paths"])),
         t("doc_export_images", "Export pages as images", "Write pages as PNG, JPEG or TIFF files (`<name>_page_<n>.png|jpg|tif`) into a folder, at a resolution (default 150 dpi). JPEG and TIFF are flattened onto white paper. Includes unsaved edits.")
             .cmd("export.image")
             .with(schema(
@@ -777,7 +799,7 @@ pub fn tools() -> Vec<ToolDef> {
                 json!({ "doc": doc(), "field": { "type": "string" }, "event": { "type": "string", "enum": ["keystroke", "format", "validate", "calculate", "mouse_up"] }, "script": { "type": "string" } }),
                 &["doc", "field", "event"],
             )),
-        t("doc_export_office", "Export to Word, HTML or RTF", "Export a PDF ▸ Word (.docx), HTML (.html, one file with images inline) or RTF (.rtf), chosen by path's extension: paragraphs in reading order, headings from larger text, bold and italic, images where they fall, a page break between pages.")
+        t("doc_export_office", "Export to Word, Excel, PPT, HTML or RTF", "Export according to path extension. DOCX/HTML/RTF: paragraphs, images and page breaks. XLSX: one sheet per page, extracted text and heuristic table cells (review the result; not a layout clone). PPTX: one page image per slide at 120 dpi, appearance retained, not editable source text. No macros or external relationships.")
             .cmd("export.docx")
             .with(schema(json!({ "doc": doc(), "path": { "type": "string" } }), &["doc", "path"])),
         t("pdfa_verify", "Verify PDF/A", "Standards ▸ Verify PDF/A compliance: the PDF/A-2b or 3b rules the document breaks (ISO 19005 clause, message, page, whether Save as PDF/A can fix it), plus what it declares.")

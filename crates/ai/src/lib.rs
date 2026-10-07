@@ -26,7 +26,7 @@ impl Default for Provider {
         Self {
             id: "default".into(),
             name: "我的 AI 接口".into(),
-            base_url: "https://api.openai.com/v1".into(),
+            base_url: String::new(),
             model: String::new(),
             models: Vec::new(),
             api_key: String::new(),

@@ -121,6 +121,10 @@ pub struct TextBlock {
 }
 
 impl TextLine {
+    pub(crate) fn source_ops(&self) -> (usize, &[usize], usize, [f64; 6]) {
+        (self.stream, &self.ops, self.origin.bt_op, Matrix(self.origin.tm).then(&Matrix(self.origin.ctm)).0)
+    }
+
     /// The baseline's height in user space.
     pub fn origin_baseline(&self) -> f64 {
         self.origin.baseline

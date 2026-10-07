@@ -14,3 +14,5 @@ serde = { version = "1", features = ["derive"] }
 sha2 = "0.11"
 toml = "1"
 resvg = { version = "0.47", default-features = false }
+printcraft-update = { workspace = true }
+qbsdiff = "=1.4.4"

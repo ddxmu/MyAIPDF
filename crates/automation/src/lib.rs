@@ -215,6 +215,18 @@ impl Automation {
                 let application = if application.is_absolute() { application } else { std::env::current_dir().map_err(failed)?.join(application) };
                 serde_json::to_value(printcraft_update::install(&package, &application).map_err(failed)?).map_err(failed)?
             }
+            "update_apply_delta" => {
+                if args["confirm"].as_bool() != Some(true) {
+                    return Err(failed("Installing a delta requires confirm:true"));
+                }
+                if self.session.docs().iter().any(|d| d.dirty) {
+                    return Err(failed("Save all unsaved documents before installing a delta"));
+                }
+                let directory = self.resolve(a.str("directory")?, false)?;
+                let application = self.resolve(a.str("application")?, true)?;
+                let application = if application.is_absolute() { application } else { std::env::current_dir().map_err(failed)?.join(application) };
+                serde_json::to_value(printcraft_update::install_delta_directory(&directory, &application).map_err(failed)?).map_err(failed)?
+            }
             "ai_models" | "ai_chat" => {
                 let provider = printcraft_ai::Provider {
                     base_url: a.str("api_url")?.into(),
@@ -571,6 +583,71 @@ impl Automation {
             }
             "doc_export_images" | "doc_export_text" | "doc_export_all_images" => self.export(name, &a)?,
             "doc_header_footer" | "doc_watermark" | "doc_background" | "doc_remove_marks" => self.marks(name, &a)?,
+            "watermark_analyze" => {
+                let pages = self.pages(&a, "pages")?;
+                let include_all = a.opt_bool("include_all")?.unwrap_or(false);
+                let candidates = self.doc(&a)?.watermark_candidates(&pages, include_all).map_err(failed)?;
+                json!({ "candidates": candidates.iter().map(|c| json!({
+                    "id": c.id, "kind": c.kind, "label": c.label, "reason": c.reason, "likely": c.likely,
+                    "occurrences": c.occurrences.iter().map(|o| json!({ "page": o.page + 1, "rect": o.rect })).collect::<Vec<_>>()
+                })).collect::<Vec<_>>(), "note": "候选可能是正文或页眉；仅删除用户选择的对象。扫描图片中的水印不可独立删除。" })
+            }
+            "watermark_remove" => {
+                if a.opt_bool("confirm")? != Some(true) {
+                    return Err(failed("需要 confirm: true 确认删除已选择的水印"));
+                }
+                let pages = self.pages(&a, "pages")?;
+                let ids = a.strs("candidates")?.into_iter().map(str::to_owned).collect();
+                self.apply(&a, Edit::RemoveWatermarks { pages, candidates: ids })?
+            }
+            "page_transitions" | "prepress_vector_gray" | "prepress_hairlines" | "prepress_printer_marks" => {
+                use printcraft_engine::ProductionSettings as S;
+                let pages = self.pages(&a, "pages")?;
+                let settings = match name {
+                    "page_transitions" => {
+                        S::Transitions { style: a.opt_str("style")?.unwrap_or("Dissolve").into(), seconds: a.opt_num("seconds")?.unwrap_or(1.0) }
+                    }
+                    "prepress_vector_gray" => S::VectorGray,
+                    "prepress_hairlines" => S::Hairlines { minimum: a.opt_num("minimum")?.unwrap_or(0.5) },
+                    _ => S::PrinterMarks { margin: a.opt_num("margin")?.unwrap_or(36.0) },
+                };
+                self.apply(&a, Edit::PageProduction { pages, settings })?
+            }
+            "scan_enhance" => {
+                let pages = self.pages(&a, "pages")?;
+                let id = self.doc(&a)?.id;
+                let count = self
+                    .session
+                    .enhance_scans(id, &pages, a.opt_num("contrast")?.unwrap_or(20.0) as f32, a.opt_bool("sharpen")?.unwrap_or(true))
+                    .map_err(failed)?;
+                json!({"enhanced":count,"document":summary(self.doc(&a)?)})
+            }
+            "measure_distance" => {
+                let page = self.page(&a)?;
+                let point = |key: &str| -> Result<[f64; 2]> {
+                    let values = a.get(key).and_then(Value::as_array).ok_or_else(|| failed("point must be [x,y]"))?;
+                    let values = values
+                        .iter()
+                        .map(|v| v.as_f64().filter(|n| n.is_finite()).ok_or_else(|| failed("point must contain finite numbers")))
+                        .collect::<Result<Vec<_>>>()?;
+                    values.try_into().map_err(|_| failed("point must contain exactly two numbers"))
+                };
+                let unit = a.opt_str("unit")?.unwrap_or("mm");
+                let ratio = a.opt_num("ratio")?.unwrap_or(1.0);
+                let distance = self.doc(&a)?.measure_distance(page, point("from")?, point("to")?, ratio, unit).map_err(failed)?;
+                json!({"distance":distance,"unit":unit,"ratio":ratio,"page":page+1})
+            }
+            "doc_create_files" => {
+                let mut files = Vec::new();
+                for p in a.strs("paths")? {
+                    let path = self.resolve(p, false)?;
+                    let name = path.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+                    files.push((name, std::fs::read(&path).map_err(failed)?));
+                }
+                let bytes = self.session.create_from_files(files).map_err(failed)?;
+                let id = self.session.open("Combined.pdf", None, bytes, None).map_err(failed)?;
+                summary(self.session.get(id).ok_or_else(|| failed("created document unavailable"))?)
+            }
             "doc_unprotect" => {
                 let mut out = self.apply(&a, Edit::RemoveProtection)?;
                 out["security"] = security(self.doc(&a)?);

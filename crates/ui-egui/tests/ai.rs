@@ -73,10 +73,16 @@ fn chinese_ui_models_chat_confirm_undo_and_privacy() {
         }
     });
     let mut h = harness(Provider { base_url: format!("http://{address}/v1"), api_key: "dummy-test-key".into(), ..Default::default() });
+    h.get_by_label("接口设置").click();
+    h.run_steps(3);
+    h.get_by_label("拉取模型").hover();
+    h.run_steps(2);
     h.get_by_label("拉取模型").click();
     h.run_steps(2);
     wait(&mut h);
     assert_eq!(h.state().ai.preferences.providers[0].model, "test-chat-model");
+    h.get_by_label("完成设置").click();
+    h.run_steps(3);
     h.state_mut().ai.input = "将当前页顺时针旋转 90 度".into();
     h.run_steps(3);
     h.get_by_label("发送给 AI").click();
@@ -118,4 +124,66 @@ fn stale_plan_and_cross_document_plan_cannot_edit() {
     let other = h.state().views.last().unwrap().id;
     assert_eq!(h.state().session.get(other).unwrap().info.pages[0].rotation, 0);
     assert!(!h.state().session.get(other).unwrap().dirty);
+}
+
+#[test]
+fn settings_are_a_separate_modal_and_leave_the_chat_composer_visible() {
+    let mut h = harness(Provider { id: "ui-only-fixture".into(), api_key: "private-ui-fixture".into(), ..Default::default() });
+    assert!(h.query_by_label("AI 接口设置").is_none());
+    h.get_by_label("问题或 PDF 处理要求");
+    h.get_by_label("接口设置").click();
+    h.run_steps(3);
+    h.get_by_label("AI 接口设置");
+    h.get_by_label("API 地址（OpenAI 兼容）");
+    h.get_by_label("新增接口").hover();
+    h.run_steps(2);
+    h.get_by_label("新增接口").click();
+    h.run_steps(3);
+    assert_eq!(h.state().ai.preferences.providers.len(), 2);
+    assert!(h.state().ai.preferences.providers[1].base_url.is_empty());
+    h.get_by_label("显示").click();
+    h.run_steps(2);
+    assert!(h.state().ai.show_key);
+    h.get_by_label("完成设置").click();
+    h.run_steps(3);
+    assert!(!h.state().ai.settings_open && !h.state().ai.show_key);
+    assert!(!h.state().persist().contains("private-ui-fixture"));
+    h.get_by_label("问题或 PDF 处理要求");
+}
+
+#[test]
+fn settings_actions_remain_visible_in_small_windows() {
+    for size in [egui::vec2(1024.0, 700.0), egui::vec2(800.0, 600.0)] {
+        let mut h = Harness::builder().with_size(size).build_eframe(|_| {
+            let mut app = PrintCraftApp::new();
+            app.language = Language::Zh;
+            app.ai.settings_open = true;
+            app
+        });
+        h.run_steps(4);
+        for label in ["保存接口设置", "忘记已存密钥", "完成设置"] {
+            let rect = h.get_by_label(label).rect();
+            assert!(rect.min.y >= 0.0 && rect.max.y <= size.y && rect.min.x >= 0.0 && rect.max.x <= size.x, "{label}: {rect:?}");
+        }
+    }
+}
+
+#[test]
+fn only_known_qa_settings_are_removed_not_real_local_or_cloud_providers() {
+    let mut app = PrintCraftApp::new();
+    app.restore(
+        &json!({"ai":{"selected":1,"providers":[
+            {"id":"old-qa","base_url":"http://127.0.0.1:18473/v1","model":"qa-secondary-model","models":["qa-chat-model","qa-secondary-model"]},
+            {"id":"real-local","base_url":"http://127.0.0.1:18473/v1","model":"real-model","models":["real-model"]},
+            {"id":"cloud","base_url":"https://example.invalid/v1","model":"cloud-chat"}
+        ]}})
+        .to_string(),
+    );
+    let p = &app.ai.preferences.providers;
+    assert!(p[0].base_url.is_empty() && p[0].models.is_empty() && p[0].model.is_empty());
+    assert_eq!(p[1].model, "real-model");
+    assert_eq!(p[1].base_url, "http://127.0.0.1:18473/v1");
+    assert_eq!(p[2].base_url, "https://example.invalid/v1");
+    assert_eq!(app.ai.preferences.selected, 1);
+    assert!(!app.ai.busy());
 }

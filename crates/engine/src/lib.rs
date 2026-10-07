@@ -37,7 +37,10 @@ pub use printcraft_forms::{
 };
 
 pub use printcraft_a11y as a11y;
+pub use printcraft_edit::production::Settings as ProductionSettings;
+pub use printcraft_edit::watermarks::Candidate as WatermarkCandidate;
 pub use printcraft_edit::{BlockStyle, PageImage, TextBlock, TextLine};
+pub mod utilities;
 
 /// A change to an existing page image.
 #[derive(Clone, Debug, PartialEq)]
@@ -216,6 +219,11 @@ pub struct Document {
 }
 
 impl Document {
+    pub fn watermark_candidates(&self, pages: &[usize], include_all: bool) -> Result<Vec<WatermarkCandidate>, String> {
+        let editor = self.editor.as_ref().ok_or("此文档不能读取为可编辑内容")?;
+        guard(|| printcraft_edit::watermarks::analyze(&editor.cos, pages, include_all))?.map_err(|e| e.to_string())
+    }
+
     /// How the document opens (Document Properties ▸ Initial View).
     /// Accessibility ▸ Check for accessibility: the full check (`None` if the document can't be
     /// read for editing).
@@ -889,6 +897,14 @@ pub enum Edit {
     RemoveMarks {
         kind: MarkKind,
     },
+    RemoveWatermarks {
+        pages: Vec<usize>,
+        candidates: Vec<String>,
+    },
+    PageProduction {
+        pages: Vec<usize>,
+        settings: ProductionSettings,
+    },
     /// Edit a PDF ▸ Add content ▸ Text (`text.rect` in display space).
     AddText {
         page: usize,
@@ -1049,6 +1065,8 @@ impl Edit {
             Edit::RemoveMarks { kind: MarkKind::HeaderFooter } => "Remove header & footer".into(),
             Edit::RemoveMarks { kind: MarkKind::Watermark } => "Remove watermark".into(),
             Edit::RemoveMarks { kind: MarkKind::Background } => "Remove background".into(),
+            Edit::RemoveWatermarks { .. } => "Remove selected watermarks".into(),
+            Edit::PageProduction { settings, .. } => settings.label().into(),
             Edit::AddText { .. } => "Add text".into(),
             Edit::AddImage { .. } => "Add image".into(),
             Edit::UpdateContent { .. } => "Edit content".into(),
@@ -1115,6 +1133,10 @@ fn unrestricted(p: &printcraft_cos::Permissions) -> bool {
 /// Whether the opening password allows an edit (§7.6.4.2, Table 22).
 fn check_permission(edit: &Edit, p: &printcraft_cos::Permissions) -> Result<(), EditError> {
     match edit {
+        Edit::PageProduction {settings,..} => {
+            let allowed = if matches!(settings,ProductionSettings::Transitions {..}) { p.assemble() } else { p.modify() };
+            if allowed { Ok(()) } else { Err(EditError::NotPermitted("page production changes")) }
+        }
         Edit::RotatePages { .. }
         | Edit::DeletePages { .. }
         | Edit::MovePages { .. }
@@ -1175,6 +1197,7 @@ fn check_permission(edit: &Edit, p: &printcraft_cos::Permissions) -> Result<(), 
         | Edit::AddWatermark { .. }
         | Edit::AddBackground { .. }
         | Edit::RemoveMarks { .. }
+        | Edit::RemoveWatermarks { .. }
         | Edit::AddField { .. }
         | Edit::ApplyRedactions { .. }
         | Edit::AddText { .. }
@@ -1459,6 +1482,10 @@ fn run_edit(doc: &mut printcraft_cos::Document, edit: &Edit, cx: &mut EditCtx) -
                 return Err(EditError::Edit(printcraft_edit::EditError::Invalid("there is nothing to remove".into())));
             }
         }
+        Edit::RemoveWatermarks { pages, candidates } => {
+            printcraft_edit::watermarks::remove(doc, pages, candidates)?;
+        }
+        Edit::PageProduction { pages, settings } => printcraft_edit::production::apply(doc, pages, settings)?,
         Edit::AddText { page, text } => {
             printcraft_edit::add_content(doc, *page, &AddedContent::Text(text.clone()))?;
         }

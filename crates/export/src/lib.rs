@@ -7,7 +7,9 @@
 
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
+mod office;
 mod zip;
+pub use office::{pptx, xlsx};
 
 pub use zip::Zip;
 
@@ -680,6 +682,29 @@ mod tests {
         for n in names {
             assert!(d.windows(n.len()).any(|w| w == n.as_bytes()), "{n}");
         }
+    }
+
+    #[test]
+    fn xlsx_and_pptx_contain_real_office_parts_and_preserve_safe_text() {
+        let mut p = table_page();
+        p.blocks.push(Block { text: "=SUM(A1) <&> 中文\u{0}".into(), rect: [72.0, 300.0, 500.0, 311.0], size: 11.0, bold: false, italic: false });
+        let bytes = xlsx(&[p, page()]).unwrap();
+        let sheet = part(&bytes, "xl/worksheets/sheet1.xml");
+        assert!(sheet.contains("Meter") && sheet.contains("37414.00") && sheet.contains("Notes follow"));
+        assert!(sheet.contains("=SUM(A1) &lt;&amp;&gt; 中文") && !sheet.contains("<f>"), "no active formulas: {sheet}");
+        assert!(!sheet.contains('\u{0}'));
+        assert!(part(&bytes, "xl/workbook.xml").contains("第 2 页"));
+        assert!(xlsx(&[]).is_err());
+        let mut oversized = page();
+        oversized.blocks[0].text = "中".repeat(32768);
+        assert!(xlsx(&[oversized]).is_err(), "no silent truncation");
+        let slides = pptx(&[(200.0, 300.0, b"png-test".to_vec()), (300.0, 200.0, b"png-test-2".to_vec())]).unwrap();
+        assert!(part(&slides, "ppt/presentation.xml").contains("<p:sldId id=\"257\""));
+        let second = part(&slides, "ppt/slides/slide2.xml");
+        assert!(second.contains("PDF 第 2 页") && second.contains("不是可编辑文字"));
+        assert!(second.contains("cx=\"2540000\" cy=\"1693333\""), "letterboxed aspect ratio: {second}");
+        assert!(part(&slides, "ppt/slides/_rels/slide2.xml.rels").contains("../media/page2.png"));
+        assert!(pptx(&[(f64::NAN, 300.0, vec![])]).is_err());
     }
 
     /// One part of a package written by [`Zip`], inflated.

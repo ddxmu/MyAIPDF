@@ -28,6 +28,8 @@ list (author, source, license) is in ATTRIBUTION.md.
   copyright and licence records are retained. See craft-fonts/fonts/ibm-plex-sans-sc/OFL.txt.
 - subsetter 0.2.6 (https://github.com/typst/subsetter), by Laurenz Mädje and Laurenz Stampfl —
   MIT OR Apache-2.0. Used to embed Chinese TrueType subsets; its MIT notice is included below.
+- qbsdiff 1.4.4 (https://github.com/hucsmn/qbsdiff), Copyright 2019-2022 hucsmn <hucsmn@hotmail.com>,
+  MIT. Build tool only: generates BSDIFF40 deltas, not linked into the shipped application.
 - hayro (rendering, via crates.io) — Apache-2.0 OR MIT. Its `embed-fonts` feature bundles the Foxit
   standard-14 Type 1 fonts under BSD-3-Clause ("Copyright 2014 PDFium Authors"), and hayro-cmap bundles
   Adobe CMap resources under BSD-3-Clause.
@@ -55,9 +57,11 @@ google/fonts at a pinned commit, verified by SHA-256, all under the SIL Open Fon
 Asset licences are not visible to cargo-deny; keep this file current whenever assets or asset-bundling
 dependencies change (plan/adr/0002, 0006).
 
-subsetter MIT licence:
+subsetter / qbsdiff MIT licence:
 
 MIT License
+
+qbsdiff: Copyright 2019-2022 hucsmn <hucsmn@hotmail.com>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

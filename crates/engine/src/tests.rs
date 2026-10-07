@@ -36,6 +36,62 @@ fn session_with(n: usize) -> (Session, DocId) {
     (s, id)
 }
 
+#[test]
+fn utilities_measure_create_enhance_and_failed_production_are_bounded_and_undoable() {
+    let (mut s, id) = session_with(2);
+    let original = s.get(id).unwrap().bytes.clone();
+    let doc = s.get(id).unwrap();
+    assert!((doc.measure_distance(0, [10.0, 10.0], [82.0, 10.0], 1.0, "mm").unwrap() - 25.4).abs() < 0.00001);
+    assert_eq!(doc.measure_distance(0, [10.0, 10.0], [82.0, 10.0], 100.0, "in").unwrap(), 100.0);
+    assert!(doc.measure_distance(0, [-1.0, 10.0], [82.0, 10.0], 1.0, "mm").is_err());
+    assert!(doc.measure_distance(0, [10.0, 10.0], [82.0, 10.0], f64::NAN, "mm").is_err());
+    assert!(
+        s.apply(id, Edit::PageProduction { pages: vec![0, 999], settings: ProductionSettings::Transitions { style: "Fade".into(), seconds: 1.0 } })
+            .is_err()
+    );
+    assert_eq!(s.get(id).unwrap().bytes, original);
+    assert!(s.enhance_scans(id, &[0], 20.0, true).is_err(), "never rasterize text pages");
+    let rgba: Vec<_> = (0..100).flat_map(|n| [100 + (n % 30) as u8, 110, 120, 255]).collect();
+    let png = export::encode_png(10, 10, &rgba).unwrap();
+    let bytes =
+        s.create_from_files(vec![("source.pdf".into(), fixture(1)), ("note.txt".into(), b"Text page".to_vec()), ("scan.png".into(), png)]).unwrap();
+    let made = s.open("mixed.pdf", None, bytes, None).unwrap();
+    assert_eq!(s.get(made).unwrap().info.pages.len(), 3);
+    let scan_before = s.get(made).unwrap().page_image_file(2, 0).unwrap().1;
+    assert_eq!(s.enhance_scans(made, &[2], 35.0, true).unwrap(), 1);
+    assert_ne!(s.get(made).unwrap().page_image_file(2, 0).unwrap().1, scan_before);
+    assert_eq!(s.get(made).unwrap().info.pages.len(), 3);
+    assert_eq!(page_texts(&s, made)[0], "Page 1");
+    s.undo(made).unwrap();
+    assert_eq!(s.get(made).unwrap().page_image_file(2, 0).unwrap().1, scan_before);
+    assert_eq!(s.get(id).unwrap().bytes, original);
+    assert!(s.create_from_files(vec![]).is_err());
+    assert!(s.create_from_files(vec![("wrong.docx".into(), b"PKwrong".to_vec())]).is_err());
+    assert!(s.create_from_files(vec![("中文.txt".into(), "中文不可静默变成问号".as_bytes().to_vec())]).unwrap_err().contains("未替换成问号"));
+}
+
+#[test]
+fn measurement_converts_display_coordinates_once_for_rotated_user_units() {
+    use printcraft_cos::{Dict, Document as Cos, Object, SaveOptions, write_incremental};
+    let mut cos = Cos::open(Arc::new(fixture(1))).unwrap();
+    let page = printcraft_model::pages(&cos)[0].obj;
+    let scale = cos.add(Object::Real(2.0));
+    cos.update_dict(page, |d: &mut Dict| {
+        d.set(b"UserUnit".to_vec(), Object::Ref(scale));
+        d.set(b"Rotate".to_vec(), Object::Int(90));
+    })
+    .unwrap();
+    let bytes = write_incremental(&cos, &SaveOptions::default()).unwrap();
+    let mut session = Session::new();
+    let id = session.open("scaled.pdf", None, Arc::new(bytes), None).unwrap();
+    let doc = session.get(id).unwrap();
+    // The current raster's view coordinates are unscaled PDF units. The physical
+    // measurement still honours UserUnit exactly once, including indirect values.
+    assert_eq!(doc.info.pages[0].width, 300.0);
+    assert!((doc.measure_distance(0, [10.0, 10.0], [82.0, 10.0], 1.0, "mm").unwrap() - 50.8).abs() < 0.0001);
+    assert!((doc.measure_user_distance(0, [20.0, 20.0], [56.0, 20.0], 1.0, "mm").unwrap() - 25.4).abs() < 0.0001);
+}
+
 fn page_texts(s: &Session, id: DocId) -> Vec<String> {
     let doc = s.get(id).unwrap();
     let config = printcraft_render::RenderConfig { password: doc.password.as_deref().map(Arc::from), ..Default::default() };
@@ -1395,12 +1451,12 @@ fn exporting_office_files_keeps_images() {
     let pid = s.open("p.pdf", None, pic, None).unwrap();
     let d = s.get(pid).unwrap();
     assert_eq!(d.export_pages()[0].images.len(), 1);
-    let docx = d.export_office(compare::OfficeFormat::Docx);
+    let docx = d.export_office(compare::OfficeFormat::Docx).unwrap();
     assert!(docx.windows(16).any(|w| w == b"word/media/image"));
     if let Ok(dir) = std::env::var("PRINTCRAFT_EXPORT_DIR") {
         std::fs::write(format!("{dir}/pic.docx"), &docx).unwrap();
     }
-    assert!(String::from_utf8(d.export_office(compare::OfficeFormat::Html)).unwrap().contains("data:image/png;base64,"));
+    assert!(String::from_utf8(d.export_office(compare::OfficeFormat::Html).unwrap()).unwrap().contains("data:image/png;base64,"));
 }
 
 #[test]

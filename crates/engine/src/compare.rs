@@ -129,6 +129,8 @@ pub enum OfficeFormat {
     Docx,
     Html,
     Rtf,
+    Xlsx,
+    Pptx,
 }
 
 impl OfficeFormat {
@@ -137,6 +139,8 @@ impl OfficeFormat {
             OfficeFormat::Docx => "docx",
             OfficeFormat::Html => "html",
             OfficeFormat::Rtf => "rtf",
+            OfficeFormat::Xlsx => "xlsx",
+            OfficeFormat::Pptx => "pptx",
         }
     }
 
@@ -145,6 +149,8 @@ impl OfficeFormat {
             "docx" => Some(OfficeFormat::Docx),
             "html" | "htm" => Some(OfficeFormat::Html),
             "rtf" => Some(OfficeFormat::Rtf),
+            "xlsx" => Some(OfficeFormat::Xlsx),
+            "pptx" => Some(OfficeFormat::Pptx),
             _ => None,
         }
     }
@@ -189,13 +195,32 @@ impl crate::Document {
     }
 
     /// The document as a Word, HTML or RTF file.
-    pub fn export_office(&self, format: OfficeFormat) -> Vec<u8> {
+    pub fn export_office(&self, format: OfficeFormat) -> Result<Vec<u8>, String> {
+        if format == OfficeFormat::Pptx {
+            if self.info.pages.len() > 500 {
+                return Err("PPT 导出最多 500 页，请分批导出".into());
+            }
+            let mut exporter = crate::export::Exporter::new(self);
+            let mut images = Vec::new();
+            let mut total = 0_usize;
+            for (i, p) in self.info.pages.iter().enumerate() {
+                let image = exporter.png(i, 120.0)?;
+                total = total.saturating_add(image.len());
+                if total > 256 * 1024 * 1024 {
+                    return Err("PPT 图片总量过大，请分批导出".into());
+                }
+                images.push((p.width as f64, p.height as f64, image));
+            }
+            return printcraft_export::pptx(&images);
+        }
         let pages = self.export_pages();
         let title = self.info.title.clone().unwrap_or_else(|| self.name.trim_end_matches(".pdf").to_string());
         match format {
-            OfficeFormat::Docx => printcraft_export::docx(&pages, &title),
-            OfficeFormat::Html => printcraft_export::html(&pages, &title).into_bytes(),
-            OfficeFormat::Rtf => printcraft_export::rtf(&pages).into_bytes(),
+            OfficeFormat::Docx => Ok(printcraft_export::docx(&pages, &title)),
+            OfficeFormat::Html => Ok(printcraft_export::html(&pages, &title).into_bytes()),
+            OfficeFormat::Rtf => Ok(printcraft_export::rtf(&pages).into_bytes()),
+            OfficeFormat::Xlsx => printcraft_export::xlsx(&pages),
+            OfficeFormat::Pptx => Err("请使用页面图片导出".into()),
         }
     }
 }

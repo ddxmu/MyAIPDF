@@ -986,7 +986,9 @@ pub fn document_area(app: &mut PrintCraftApp, index: usize, ui: &mut egui::Ui) {
     let scale = view.render_scale(ppp);
     let tag = (scale * 1000.0) as u64;
     let hand = app.quick_tool == QuickTool::Hand;
-    let tool = app.quick_tool;
+    let measuring = app.quick_tool == QuickTool::Measure;
+    let measurement = (app.utilities.ratio, app.utilities.unit.clone());
+    let tool = if measuring { QuickTool::Comment(comments::CommentTool::Line) } else { app.quick_tool };
     // Text selection runs for the Select tool and for the markup tools (highlight…).
     let selects_text = match tool {
         QuickTool::Comment(t) => t.markup().is_some() || t == comments::CommentTool::ReplaceText,
@@ -1003,6 +1005,7 @@ pub fn document_area(app: &mut PrintCraftApp, index: usize, ui: &mut egui::Ui) {
         | QuickTool::Link
         | QuickTool::SignArea { .. }
         | QuickTool::MarqueeZoom
+        | QuickTool::Measure
         | QuickTool::Snapshot => false,
     };
     let prefs = &app.comment_prefs;
@@ -1278,6 +1281,16 @@ pub fn document_area(app: &mut PrintCraftApp, index: usize, ui: &mut egui::Ui) {
             };
             let on_link = tool == QuickTool::Link && can_modify && crate::link_ui::page_input(ui, &resp, &xf, i, info, &doc_links, view);
             let consumed = on_edit_text || on_link || on_content || boxing || on_field || comments::page_input(ui, &resp, &pcx, view);
+            if measuring
+                && let Some(Edit::AddAnnotation(a)) = view.pending_edit.as_mut()
+                && a.page == i
+                && let printcraft_engine::Shape::Line { from, to, .. } = &a.shape
+            {
+                match doc.measure_user_distance(i, *from, *to, measurement.0, &measurement.1) {
+                    Ok(n) => a.contents = format!("距离 {n:.3} {} · 比例 1:{}", measurement.1, measurement.0),
+                    Err(_) => view.pending_edit = None,
+                }
+            }
 
             // Text layer: find matches, selection, I-beam and drag-to-select.
             let to_screen = |g: [f32; 4]| xf.view_rect(g);
