@@ -57,7 +57,7 @@ Read this before choosing work. The feature table above counts what exists; this
 | M Accessibility | 62% | Checker (all 32 rules). Missing: autotag, Tags/Order/Content panels, Reading Order tool, keyboard-only operation |
 | B View | 55% | Shell, find, panels, tiles, web build. **Rendering is borrowed (`hayro`)**, so the 7 rendering P0s are only partial |
 | D Organize | 55% | Pages, combine, split, bookmarks, labels. Missing: replace pages, transitions |
-| G Protect | 54% | Passwords, permissions, redaction, sanitize. Missing: certificate security, redaction codes |
+| G Protect | 54% | Passwords, permissions, redaction, sanitize; RSA/AES-256 certificate-security subset. Missing: wider certificate compatibility, redaction codes |
 | H Sign | 48% | PAdES B-B signing and validation. Missing: timestamps (B-T), LTV (DSS/OCSP/CRL), FieldMDP, Windows store, PKCS #11 |
 | C Edit | 46% | Added text and images stay editable; header/footer/watermark. Missing: robust editing of existing text and images (fonts, subsets, reflow) |
 | L Print | 36% | Acrobat-style sizing, n-up, booklet, CUPS. Missing: Windows and web printing, production options |
@@ -71,6 +71,8 @@ Read this before choosing work. The feature table above counts what exists; this
 **Robustness, measured.** `main`'s CI was red for 30+ runs until 2026-10-04 (a clippy lint, Windows line endings, flaky perf tests). Once the nightly fuzz job could finish, three 15-minute runs found 7 out-of-memory crashes (one aborted on every platform) and 11 hangs, 7 of them in our own `cos` parser rather than `hayro`. All are fixed or in review, but expect more: keep the nightly fuzz job green and turn every finding into a synthetic test.
 
 ## Where we're lacking and where we're going
+
+MyAIPDF fork, 2026-10-08 (0.1.5): the requested PS/EPS and certificate-encryption catalogue entries now have working UI, engine and headless paths. PS/EPS rasterize at the selected resolution; they do not preserve editable text/vectors or claim prepress fidelity. Certificate security supports RSA/AES-256 CMS with separate-copy saves, imported PKCS#12 opening and encrypted save/recovery. Read/print or full-control rights apply to all recipients; legacy algorithms, EC/hardware identities and live revocation checks remain unsupported. Independent OpenSSL CMS and Apache PDFBox 3.0.8 checks supplement synthetic UI/tool regression tests. Watermark removal now has a left-arrow return control that preserves the analysis and document. Full desktop installers plus exact-base 0.1.4 deltas retain the 0.1.4 manual-update policy.
 
 MyAIPDF fork, 2026-10-08 (0.1.4): restore the legacy full-DMG path that 0.1.1/0.1.2 clients require, while retaining exact-base delta compatibility for 0.1.3. The new client shows package type and explicit download/install controls; either format is verified, staged and recoverably swapped with saved-document guards. Per the user's revised request, ship a full installer as well as the 0.1.3 delta. This supersedes the 0.1.3 delta-only policy below; no startup network requests or new PDF capability claims.
 
@@ -134,6 +136,8 @@ M0 → M1 → M2 → M3 → M4 must happen in order. After M4, M5–M12 can run 
 ## Log
 
 Newest first. One line per session: the date, what moved, and the new overall percentage.
+
+- **2026-10-08 (MyAIPDF 0.1.5):** Added raster PS/EPS export and RSA/AES-256 certificate encryption, with UI, engine, headless tools and explicit limits; watermark removal now has a left-chevron return control. Native 782 tests passed (5 ignored), including encrypted edit/save/recovery, and the OpenSSL CMS oracle passed explicitly. Apache PDFBox 3.0.8 independently decrypted the edited synthetic PDF; text, page count and rotated rendering were checked. Fmt/clippy/assets/layers/parity passed. Native control opened both dialogs and returned to All Tools without changing the document; lock-screen prevented the native screenshot, supplemented by reviewed headless UI renders. Real 0.1.4 updaters upgraded private copies with full 109,847,527-byte and delta 4,048,231-byte DMGs, matching the signed new app and preserving exact old-app backups. Installed programs and personal settings remain untouched; wasm was not verified because its target is absent. PDF milestone estimates unchanged (≈ 30–35% effort).
 
 - **2026-10-08 (MyAIPDF 0.1.4):** Fixed the old-client package mismatch behind the missing install entry. Native 777 tests passed (4 ignored), fmt/clippy/assets/layers/parity gates passed; About download/install render checked. Real 0.1.2 full and 0.1.3 delta updaters upgraded private copies to the same signed 0.1.4 app with exact prior-app backups. Full 108,726,875-byte DMG and 2,647,377-byte delta saved under Desktop/MyAIPDF without replacing installed or historical programs. PDF milestone estimates unchanged (≈ 30–35% effort).
 

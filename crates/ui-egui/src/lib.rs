@@ -11,6 +11,7 @@ mod a11y_ui;
 mod actions_ui;
 pub mod ai_ui;
 pub mod canvas;
+pub mod certificate_ui;
 mod chrome;
 mod combine_ui;
 mod commands;
@@ -162,6 +163,7 @@ pub enum Dialog {
     NumberPages,
     /// Protect Using Password.
     Protect,
+    CertificateProtect,
     /// Set Page Boxes (crop, trim, bleed, art, media).
     PageBoxes,
     /// Add / Update Header and Footer, Watermark, Background.
@@ -281,6 +283,8 @@ pub struct PasswordPrompt {
     pub bytes: std::sync::Arc<Vec<u8>>,
     pub input: String,
     pub error: Option<String>,
+    pub certificate: bool,
+    pub identity_path: String,
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -423,6 +427,7 @@ pub struct PrintCraftApp {
     pub number_draft: NumberDraft,
     /// Protect Using Password dialog state.
     pub protect_draft: protect::ProtectDraft,
+    pub certificate_draft: certificate_ui::CertificateDraft,
     /// Set Page Boxes dialog state.
     pub boxes_draft: pageboxes::BoxesDraft,
     /// Header & footer / watermark / background dialog state.
@@ -431,6 +436,7 @@ pub struct PrintCraftApp {
     pub utilities: UtilityDraft,
     /// Export dialog settings.
     pub export_draft: export_ui::ExportDraft,
+    pub export_eps: bool,
     /// A running export's progress.
     export_status: Option<export_ui::ExportStatus>,
     /// The saved Fill & Sign signature and initials (drawn or typed).
@@ -561,11 +567,13 @@ impl PrintCraftApp {
             bookmark_rename: None,
             last_opened_url: None,
             protect_draft: Default::default(),
+            certificate_draft: Default::default(),
             boxes_draft: Default::default(),
             marks_draft: Default::default(),
             watermarks: WatermarkState { all_pages: true, ..Default::default() },
             utilities: Default::default(),
             export_draft: Default::default(),
+            export_eps: false,
             export_status: None,
             signature: None,
             initials: None,
@@ -641,13 +649,26 @@ impl PrintCraftApp {
         let size = bytes.len();
         let id = match self.session.open(name, path.clone(), bytes.clone(), password) {
             Ok(id) => id,
-            Err(e @ (OpenError::NeedsPassword | OpenError::WrongPassword)) => {
+            Err(e @ (OpenError::NeedsPassword | OpenError::WrongPassword | OpenError::NeedsCertificate)) => {
+                let certificate = matches!(e, OpenError::NeedsCertificate);
                 let error = matches!(e, OpenError::WrongPassword).then(|| "Incorrect password. Try again.".to_string());
-                self.password_prompt = Some(PasswordPrompt { name: name.to_string(), path, bytes, input: String::new(), error });
+                self.password_prompt = Some(PasswordPrompt {
+                    name: name.to_string(),
+                    path,
+                    bytes,
+                    input: String::new(),
+                    error,
+                    certificate,
+                    identity_path: String::new(),
+                });
                 return Ok(());
             }
             Err(e) => return Err(e.to_string()),
         };
+        self.finish_open(id, name, path, size)
+    }
+
+    fn finish_open(&mut self, id: printcraft_engine::DocId, name: &str, path: Option<String>, size: usize) -> Result<(), String> {
         self.password_prompt = None;
         let doc = self.session.get(id).ok_or("the document could not be opened")?;
         let pages = doc.info.pages.len();
@@ -743,6 +764,25 @@ impl PrintCraftApp {
     pub fn submit_password(&mut self, password: Option<String>) {
         let Some(p) = self.password_prompt.take() else { return };
         let Some(pw) = password else { return };
+        if p.certificate {
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                let result = (|| {
+                    let bytes = certificate_ui::read_bounded(&p.identity_path, 4 * 1024 * 1024)?;
+                    let identity = printcraft_engine::sign::pkcs12::open(&bytes, &pw).map_err(|e| e.to_string())?;
+                    let id = self.session.open_with_certificate(&p.name, p.path.clone(), p.bytes.clone(), &identity).map_err(|e| e.to_string())?;
+                    self.finish_open(id, &p.name, p.path.clone(), p.bytes.len())
+                })();
+                if let Err(e) = result {
+                    self.password_prompt = Some(PasswordPrompt { input: String::new(), error: Some(e), ..p });
+                } else if let Some(meta) = self.pending_recovered.clone() {
+                    self.finish_recovery(&meta);
+                }
+            }
+            #[cfg(target_arch = "wasm32")]
+            self.notify("证书解密需要桌面版");
+            return;
+        }
         match self.try_open(&p.name, p.path, p.bytes, Some(&pw)) {
             Err(e) => self.notify(format!("Couldn't open {}: {e}", p.name)),
             // A recovered encrypted document is open once the prompt is gone.

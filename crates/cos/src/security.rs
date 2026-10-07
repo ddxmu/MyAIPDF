@@ -32,6 +32,17 @@ pub(crate) fn encrypt_dict(doc: &Document, d: &Dict) -> EncryptDict {
         }
     }
     let v = int(b"V", 0);
+    let public = d.name(b"Filter") == Some(b"Adobe.PubSec");
+    let public_cf = d.get(b"CF").map(|c| doc.resolve(c)).and_then(|c| c.as_dict().and_then(|cf| cf.get(&name(b"StmF")).map(|c| doc.resolve(c))));
+    let recipients = public_cf.as_ref().and_then(|cf| cf.as_dict().and_then(|cf| cf.get(b"Recipients"))).or_else(|| d.get(b"Recipients"));
+    let recipients = recipients
+        .map(|r| doc.resolve(r))
+        .and_then(|r| r.as_array().cloned())
+        .unwrap_or_default()
+        .iter()
+        .take(17)
+        .map(|r| doc.resolve(r).as_string().filter(|s| s.bytes.len() <= 16_384).map(|s| s.bytes.clone()).unwrap_or_default())
+        .collect();
     // V4: the key length comes from the standard crypt filter's /Length (bytes, or bits in
     // some files); /Length on the dictionary is often a stale 40.
     let cf_len = d
@@ -57,11 +68,16 @@ pub(crate) fn encrypt_dict(doc: &Document, d: &Dict) -> EncryptDict {
         ue: bytes_of(doc, d, b"UE"),
         perms: bytes_of(doc, d, b"Perms"),
         p: int(b"P", -1) as i32,
-        encrypt_metadata: !matches!(d.get(b"EncryptMetadata"), Some(Object::Bool(false))),
+        encrypt_metadata: !matches!(
+            if public { public_cf.as_ref().and_then(|c| c.as_dict().and_then(|c| c.get(b"EncryptMetadata"))) } else { d.get(b"EncryptMetadata") },
+            Some(Object::Bool(false))
+        ),
         crypt_filters,
         stm_f: name(b"StmF"),
         str_f: name(b"StrF"),
         ef_f: d.get(b"EFF").and_then(|v| v.as_name()).map(|n| n.to_vec()).unwrap_or_default(),
+        sub_filter: d.name(b"SubFilter").unwrap_or_default().to_vec(),
+        recipients,
     }
 }
 

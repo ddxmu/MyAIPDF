@@ -20,7 +20,8 @@ mod writer;
 pub use document::{Document, Revision, XrefEntry};
 pub use object::{Dict, MAX_DECODED, Name, ObjRef, Object, PdfString, Stream};
 pub use parser::{Lexer, parse_indirect};
-pub use printcraft_crypt::{Algorithm, Auth, Method as CryptMethod, NewEncryption, Permissions, SecurityHandler};
+pub use printcraft_crypt::{Algorithm, Auth, Method as CryptMethod, NewEncryption, Permissions, PublicKeyAuth, SecurityHandler};
+pub type CertificateUnlock<'a> = dyn Fn(&[Vec<u8>]) -> Result<PublicKeyAuth, CosError> + 'a;
 pub use writer::{SaveOptions, pdf_date, serialize, write_full, write_incremental};
 
 #[derive(Debug, thiserror::Error, Clone, PartialEq)]
@@ -37,6 +38,8 @@ pub enum CosError {
     Filter(String),
     #[error("the document is protected by a password")]
     NeedsPassword,
+    #[error("the document requires a recipient certificate and private key (.p12/.pfx)")]
+    NeedsCertificate,
     #[error("the password is incorrect")]
     WrongPassword,
     #[error("unsupported security: {0}")]

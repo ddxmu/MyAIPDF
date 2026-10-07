@@ -109,6 +109,10 @@ impl PrintCraftApp {
                 self.protect_draft = Default::default();
                 self.dialog = Some(Dialog::Protect);
             }
+            "protect.certificate" => {
+                self.certificate_draft = Default::default();
+                self.dialog = Some(Dialog::CertificateProtect);
+            }
             "protect.remove" => {
                 if self.apply_edit(Edit::RemoveProtection) {
                     self.notify("Security will be removed when you save");
@@ -265,6 +269,7 @@ impl PrintCraftApp {
                 self.apply_edit(Edit::RemoveMarks { kind });
             }
             "export.image" => self.dialog = Some(Dialog::Export(crate::export_ui::ExportKind::Image)),
+            "export.ps" => self.dialog = Some(Dialog::Export(crate::export_ui::ExportKind::PostScript)),
             "export.text" => self.dialog = Some(Dialog::Export(crate::export_ui::ExportKind::Text)),
             "a11y.check" => self.start_accessibility_check(),
             "ocr.recognize" => self.dialog = Some(Dialog::RecognizeText),

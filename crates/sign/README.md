@@ -14,6 +14,11 @@ for s in signatures(&doc, &bytes, &trust) {                                // li
   certificates (`x509`), CMS SignedData (`cms`), and PKCS #12 digital ID files (`pkcs12`):
   PBES2 (PBKDF2 + AES/3DES), the legacy SHA-1 3DES/RC2 schemes, and MAC checks. Writing uses
   OpenSSL 3's defaults (AES-256-CBC, HMAC-SHA-256).
+- **Certificate security:** `public_key` prepares and opens AES-256-CBC CMS EnvelopedData
+  for the PDF `adbe.pkcs7.s5` / AESV3 handler. RSA 2048–4096 key transport uses aws-lc-rs
+  on native targets; `.p12/.pfx` supplies the private key. The engine writes separate encrypted
+  copies and retains encryption in normal saves/recovery. Legacy CMS, EC/hardware decryption,
+  live certificate trust/revocation and different UI permission sets per recipient are not supported.
 - **Keys:** RSA, ECDSA P-256 and P-384. Verification uses RustCrypto everywhere. RSA
   private-key operations (signing, key generation) use `aws-lc-rs` on native targets and are
   refused in the browser (ADR-0009: the `rsa` crate's Marvin advisory, RUSTSEC-2023-0071, has
@@ -29,7 +34,7 @@ for s in signatures(&doc, &bytes, &trust) {                                // li
   fill, comments, metadata, page content, document structure) under the DocMDP permissions.
   The verdict follows Acrobat: valid, unknown (intact but the identity isn't trusted) or invalid.
 
-Not yet: RFC 3161 timestamps, LTV (DSS/VRI, OCSP, CRL), FieldMDP locks, certificate security,
+Not yet: RFC 3161 timestamps, LTV (DSS/VRI, OCSP, CRL), FieldMDP locks, wider certificate-security compatibility,
 OS key stores and PKCS #11 tokens.
 
 Oracles: poppler's `pdfsig` reports our signatures valid; OpenSSL reads our `.p12` files and

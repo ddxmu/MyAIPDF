@@ -679,6 +679,87 @@ fn exporting_images_and_text_through_tools() {
 }
 
 #[test]
+fn postscript_eps_export_through_tools() {
+    let dir = workdir("postscript");
+    let mut a = auto(&dir);
+    let doc = ok(&mut a, "doc_open", json!({"path":"a.pdf"}))["doc"].as_u64().unwrap();
+    ok(&mut a, "doc_export_postscript", json!({"doc":doc,"path":"pages.ps","pages":[1,3],"dpi":72}));
+    let ps = std::fs::read_to_string(dir.join("pages.ps")).unwrap();
+    assert!(ps.starts_with("%!PS-Adobe-3.0\n"));
+    assert_eq!(ps.matches("\nshowpage\n").count(), 2);
+    assert!(ps.contains("/PageSize [200.0000 300.0000]"));
+    ok(&mut a, "doc_export_postscript", json!({"doc":doc,"path":"page.eps","pages":[2],"dpi":96,"eps":true}));
+    let eps = std::fs::read_to_string(dir.join("page.eps")).unwrap();
+    assert!(eps.starts_with("%!PS-Adobe-3.0 EPSF-3.0\n"));
+    assert!(eps.contains("%%BoundingBox: 0 0 200 300"));
+    assert!(!eps.contains("setpagedevice") && !eps.contains("showpage"));
+    for args in [
+        json!({"doc":doc,"path":"bad.eps","pages":[1,2],"eps":true}),
+        json!({"doc":doc,"path":"bad.ps","dpi":0}),
+        json!({"doc":doc,"path":"../escape.ps"}),
+    ] {
+        assert!(a.call("doc_export_postscript", &args).is_err());
+    }
+    // Decode the actual exported JPEG payload; it has the page's dimensions and visible text.
+    let payload = eps.split(">> image\n").nth(1).unwrap().split('>').next().unwrap();
+    let hex: String = payload.chars().filter(|c| !c.is_whitespace()).collect();
+    let jpeg: Vec<u8> = (0..hex.len()).step_by(2).map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap()).collect();
+    assert!(jpeg.starts_with(&[0xFF, 0xD8]) && jpeg.ends_with(&[0xFF, 0xD9]));
+    assert_eq!(std::fs::read(dir.join("a.pdf")).unwrap(), fixture(3));
+}
+
+#[test]
+fn certificate_encryption_open_edit_save_and_recovery() {
+    use printcraft_engine::sign::{Certificate, Time, pkcs12};
+    let dir = workdir("certificate");
+    let now = 1_791_417_600;
+    let mut identity = pkcs12::open(include_bytes!("../../sign/tests/data/rsa-aes.p12"), "test").unwrap();
+    identity.certificate =
+        Certificate::self_signed_encryption(&identity.certificate.subject, &identity.key, Time::from_unix(now - 3600), 5, &[0x42]).unwrap();
+    std::fs::write(dir.join("recipient.cer"), &identity.certificate.raw).unwrap();
+    std::fs::write(dir.join("identity.p12"), pkcs12::write(&identity, "qa-secret").unwrap()).unwrap();
+    std::fs::write(dir.join("wrong.p12"), include_bytes!("../../sign/tests/data/ec-p256.p12")).unwrap();
+    let mut a = Automation::new().with_root(&dir).unwrap().with_clock(|| 1_791_417_600);
+    let source = ok(&mut a, "doc_open", json!({"path":"a.pdf"}))["doc"].as_u64().unwrap();
+    let args = json!({"doc":source,"path":"encrypted.pdf","certificates":["recipient.cer"],"full_control":true,"confirm":true});
+    let mut no_confirm = args.clone();
+    no_confirm["confirm"] = json!(false);
+    assert!(a.call("doc_encrypt_certificate", &no_confirm).is_err());
+    ok(&mut a, "doc_encrypt_certificate", args.clone());
+    assert!(a.call("doc_encrypt_certificate", &args).is_err(), "no overwrite");
+    let cipher = std::fs::read(dir.join("encrypted.pdf")).unwrap();
+    assert!(!cipher.windows(b"Page 1".len()).any(|b| b == b"Page 1"));
+    assert!(a.call("doc_open", &json!({"path":"encrypted.pdf"})).is_err());
+    assert!(a.call("doc_open", &json!({"path":"encrypted.pdf","identity":"wrong.p12","identity_password":"test"})).is_err());
+    assert!(a.call("doc_open", &json!({"path":"encrypted.pdf","identity":"identity.p12","identity_password":"wrong"})).is_err());
+    let doc =
+        ok(&mut a, "doc_open", json!({"path":"encrypted.pdf","identity":"identity.p12","identity_password":"qa-secret"}))["doc"].as_u64().unwrap();
+    assert_eq!(page_text(&mut a, doc), page_text(&mut a, source));
+    assert!(a.session().get(printcraft_engine::DocId(doc)).unwrap().uses_certificate_security());
+    ok(&mut a, "page_rotate", json!({"doc":doc,"pages":[1],"degrees":90}));
+    ok(&mut a, "doc_save", json!({"doc":doc}));
+    let saved = std::fs::read(dir.join("encrypted.pdf")).unwrap();
+    assert!(printcraft_cos::Document::open(std::sync::Arc::new(saved)).is_err());
+    let reopened =
+        ok(&mut a, "doc_open", json!({"path":"encrypted.pdf","identity":"identity.p12","identity_password":"qa-secret"}))["doc"].as_u64().unwrap();
+    assert_eq!(page_text(&mut a, reopened)[0], "Page 1");
+    let mut readonly = args;
+    readonly["path"] = json!("readonly.pdf");
+    readonly["full_control"] = json!(false);
+    ok(&mut a, "doc_encrypt_certificate", readonly);
+    let ro =
+        ok(&mut a, "doc_open", json!({"path":"readonly.pdf","identity":"identity.p12","identity_password":"qa-secret"}))["doc"].as_u64().unwrap();
+    assert!(a.call("page_rotate", &json!({"doc":ro,"pages":[1],"degrees":90})).is_err());
+    assert_eq!(std::fs::read(dir.join("a.pdf")).unwrap(), fixture(3));
+    let mut session = a.into_session();
+    session.apply(printcraft_engine::DocId(doc), printcraft_engine::Edit::RotatePages { pages: vec![0], degrees: 90 }).unwrap();
+    let snapshots = session.autosave_snapshots();
+    assert_eq!(snapshots.len(), 1);
+    assert!(snapshots[0].encrypted);
+    assert!(printcraft_cos::Document::open(snapshots[0].bytes.clone()).is_err());
+}
+
+#[test]
 fn accessibility_check_report_and_fixes_through_tools() {
     let dir = workdir("a11y");
     let mut a = auto(&dir);

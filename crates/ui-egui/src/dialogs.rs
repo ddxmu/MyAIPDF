@@ -252,13 +252,19 @@ pub fn show(app: &mut PrintCraftApp, ctx: &egui::Context) {
                                 }
                             }
                             Some(sec) => {
-                                row(ui, "Security method", "Password security".into());
+                                row(
+                                    ui,
+                                    "Security method",
+                                    if doc.uses_certificate_security() { "证书加密（AES-256）" } else { "Password security" }.into(),
+                                );
                                 row(ui, "Encryption", sec.method.clone());
                                 row(
                                     ui,
                                     "Opened with",
                                     if sec.pending {
                                         "— (protection is applied when you save)".into()
+                                    } else if doc.uses_certificate_security() {
+                                        if sec.owner { "收件人证书私钥（完全控制）" } else { "收件人证书私钥（受限权限）" }.into()
                                     } else if sec.owner {
                                         "Owner password (no restrictions apply)".into()
                                     } else {
@@ -911,6 +917,10 @@ pub fn show(app: &mut PrintCraftApp, ctx: &egui::Context) {
                 close = apply || cancel;
                 return;
             }
+            Dialog::CertificateProtect => {
+                close = crate::certificate_ui::body(ui, app, &t);
+                return;
+            }
             Dialog::NumberPages => {
                 use printcraft_engine::LabelStyle as L;
                 ui.label(egui::RichText::new(crate::i18n::ui_tr(ui, "Number pages")).font(theme::semibold(18.0)));
@@ -1358,10 +1368,29 @@ fn password(app: &mut PrintCraftApp, ctx: &egui::Context) {
         ui.set_width(400.0);
         ui.horizontal(|ui| {
             ui.add(crate::icons::image("lock", 22.0, t.accent));
-            ui.label(egui::RichText::new(crate::i18n::ui_tr(ui, "Password required")).font(theme::semibold(17.0)));
+            let title = if prompt.certificate { "打开证书加密 PDF" } else { "Password required" };
+            ui.label(egui::RichText::new(crate::i18n::ui_tr(ui, title)).font(theme::semibold(17.0)));
         });
         ui.add_space(6.0);
-        ui.label(format!("“{}” is protected. Enter a password to open it.", prompt.name));
+        if prompt.certificate {
+            ui.label(format!("“{}” 使用证书加密，请选择对应私钥文件。", prompt.name));
+            let path_label = ui.label("私钥文件");
+            egui::Frame::new().stroke(egui::Stroke::new(1.0, t.border)).corner_radius(6).inner_margin(6).show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.add(egui::TextEdit::singleline(&mut prompt.identity_path).hint_text(".p12 / .pfx 文件路径").desired_width(240.0))
+                        .labelled_by(path_label.id);
+                    #[cfg(not(target_arch = "wasm32"))]
+                    if ui.button("选择私钥文件").clicked()
+                        && let Some(p) = rfd::FileDialog::new().add_filter("数字 ID", &["p12", "pfx"]).pick_file()
+                    {
+                        prompt.identity_path = p.to_string_lossy().into_owned();
+                    }
+                });
+            });
+            ui.label("私钥文件密码（未设密码可留空）；不会存入设置或钥匙串。");
+        } else {
+            ui.label(format!("“{}” is protected. Enter a password to open it.", prompt.name));
+        }
         ui.add_space(8.0);
         let r = ui.add(
             egui::TextEdit::singleline(&mut prompt.input).password(true).hint_text(crate::i18n::ui_tr(ui, "Password")).desired_width(f32::INFINITY),
@@ -1371,14 +1400,20 @@ fn password(app: &mut PrintCraftApp, ctx: &egui::Context) {
         if (r.has_focus() || r.lost_focus()) && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
             submit = true;
         }
-        r.request_focus();
+        if !prompt.certificate || ui.memory(|m| m.focused().is_none()) {
+            r.request_focus();
+        }
         if let Some(e) = &prompt.error {
             ui.add_space(4.0);
             ui.label(egui::RichText::new(e).color(egui::Color32::from_rgb(0xD1, 0x3B, 0x3B)));
         }
         ui.add_space(12.0);
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            if widgets::pill_button(ui, "Open", true).clicked() {
+            if ui
+                .add_enabled_ui(!prompt.certificate || !prompt.identity_path.trim().is_empty(), |ui| widgets::pill_button(ui, "Open", true))
+                .inner
+                .clicked()
+            {
                 submit = true;
             }
             if widgets::pill_button(ui, "Cancel", false).clicked() {

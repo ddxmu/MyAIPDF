@@ -162,6 +162,14 @@ impl Document {
     /// Parse a document, authenticating encrypted ones with `password` (owner or user; `None`
     /// tries the empty password). Fails with `NeedsPassword` / `WrongPassword` as appropriate.
     pub fn open_with_password(data: Arc<Vec<u8>>, password: Option<&str>) -> Result<Self, CosError> {
+        Self::open_authenticated(data, password, None)
+    }
+
+    pub fn open_with_certificate(data: Arc<Vec<u8>>, unlock: &crate::CertificateUnlock<'_>) -> Result<Self, CosError> {
+        Self::open_authenticated(data, None, Some(unlock))
+    }
+
+    fn open_authenticated(data: Arc<Vec<u8>>, password: Option<&str>, unlock: Option<&crate::CertificateUnlock<'_>>) -> Result<Self, CosError> {
         // Viewers accept files whose header is missing or damaged as long as the body looks
         // like PDF; so do we (a note goes to the repair log).
         let header = find(&data, b"%PDF-", 0, 1024);
@@ -207,7 +215,7 @@ impl Document {
                 // Authenticate before checking the catalog: it may sit in an encrypted object
                 // stream, which reads as garbage until the key is known.
                 if let Some(enc) = doc.trailer.get(b"Encrypt").cloned() {
-                    doc.authenticate(&enc, password)?;
+                    doc.authenticate(&enc, password, unlock)?;
                     authenticated = true;
                 }
                 doc.root_is_catalog()
@@ -228,7 +236,7 @@ impl Document {
         if (!ok || !authenticated)
             && let Some(enc) = doc.trailer.get(b"Encrypt").cloned()
         {
-            doc.authenticate(&enc, password)?;
+            doc.authenticate(&enc, password, unlock)?;
         }
         let max = doc.entries.keys().next_back().copied().unwrap_or(0);
         let size = doc.trailer.int(b"Size").unwrap_or(0).max(0) as u32;
@@ -236,7 +244,7 @@ impl Document {
         Ok(doc)
     }
 
-    fn authenticate(&mut self, enc: &Object, password: Option<&str>) -> Result<(), CosError> {
+    fn authenticate(&mut self, enc: &Object, password: Option<&str>, unlock: Option<&crate::CertificateUnlock<'_>>) -> Result<(), CosError> {
         let (num, dict) = match enc {
             Object::Ref(r) => (Some(r.num), self.get(*r).as_dict().cloned()),
             Object::Dict(d) => (None, Some(d.clone())),
@@ -255,7 +263,14 @@ impl Document {
             Some(Object::Array(a)) => a.first().and_then(|s| s.as_string()).map(|s| s.bytes.clone()).unwrap_or_default(),
             _ => Vec::new(),
         };
-        let handler = printcraft_crypt::SecurityHandler::open(params, &id0, password).map_err(|e| match e {
+        let handler = if params.filter == b"Adobe.PubSec" {
+            let unlock = unlock.ok_or(CosError::NeedsCertificate)?;
+            let auth = unlock(&params.recipients)?;
+            printcraft_crypt::SecurityHandler::open_public(params, &auth)
+        } else {
+            printcraft_crypt::SecurityHandler::open(params, &id0, password)
+        }
+        .map_err(|e| match e {
             printcraft_crypt::CryptError::WrongPassword if password.is_none() => CosError::NeedsPassword,
             printcraft_crypt::CryptError::WrongPassword => CosError::WrongPassword,
             other => CosError::Security(other.to_string()),
@@ -358,6 +373,41 @@ impl Document {
         let r = self.add(e);
         self.trailer.set(b"Encrypt".to_vec(), Object::Ref(r));
         // Objects are still read with the original handler; saves use the new one.
+        self.out_security = Some(Arc::new(h));
+        self.out_encrypt_num = Some(r.num);
+        self.encryption_changed = true;
+        Ok(())
+    }
+
+    /// Set AES-256 certificate security. Changing security requires a full rewrite on save.
+    pub fn set_certificate_encryption(&mut self, recipients: Vec<Vec<u8>>, auth: &crate::PublicKeyAuth) -> Result<(), CosError> {
+        let h = printcraft_crypt::SecurityHandler::create_public(recipients, auth).map_err(|e| CosError::Security(e.to_string()))?;
+        let mut cf = Dict::new();
+        cf.set(b"CFM".to_vec(), Object::name("AESV3"));
+        // Public-key crypt filter Length is in bits (not the Standard handler's bytes).
+        cf.set(b"Length".to_vec(), Object::Int(256));
+        cf.set(b"AuthEvent".to_vec(), Object::name("DocOpen"));
+        cf.set(b"EncryptMetadata".to_vec(), Object::Bool(true));
+        cf.set(
+            b"Recipients".to_vec(),
+            Object::Array(h.dict().recipients.iter().map(|r| Object::String(crate::PdfString { bytes: r.clone(), hex: true })).collect()),
+        );
+        let mut filters = Dict::new();
+        filters.set(b"DefaultCryptFilter".to_vec(), Object::Dict(cf));
+        let mut e = Dict::new();
+        e.set(b"Filter".to_vec(), Object::name("Adobe.PubSec"));
+        e.set(b"SubFilter".to_vec(), Object::name("adbe.pkcs7.s5"));
+        e.set(b"V".to_vec(), Object::Int(5));
+        e.set(b"Length".to_vec(), Object::Int(256));
+        e.set(b"CF".to_vec(), Object::Dict(filters));
+        for key in [b"StmF".as_slice(), b"StrF", b"EFF"] {
+            e.set(key.to_vec(), Object::name("DefaultCryptFilter"));
+        }
+        if let Some(Object::Ref(old)) = self.trailer.get(b"Encrypt").cloned() {
+            self.free(old);
+        }
+        let r = self.add(e);
+        self.trailer.set(b"Encrypt".to_vec(), Object::Ref(r));
         self.out_security = Some(Arc::new(h));
         self.out_encrypt_num = Some(r.num);
         self.encryption_changed = true;

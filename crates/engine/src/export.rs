@@ -12,6 +12,7 @@ use crate::Document;
 pub struct Exporter {
     renderer: PageRenderer,
     pages: usize,
+    sizes: Vec<[f32; 2]>,
 }
 
 /// What an export needs from a document, as plain values that can move to a worker thread.
@@ -20,12 +21,18 @@ pub struct ExportSource {
     pub bytes: std::sync::Arc<Vec<u8>>,
     pub config: printcraft_render::RenderConfig,
     pub pages: usize,
+    pub sizes: Vec<[f32; 2]>,
 }
 
 impl Document {
     /// The current state, for exporting on another thread.
     pub fn export_source(&self) -> ExportSource {
-        ExportSource { bytes: self.bytes.clone(), config: self.config.clone(), pages: self.info.pages.len() }
+        ExportSource {
+            bytes: self.bytes.clone(),
+            config: self.config.clone(),
+            pages: self.info.pages.len(),
+            sizes: self.info.pages.iter().map(|p| [p.width, p.height]).collect(),
+        }
     }
 }
 
@@ -47,11 +54,69 @@ impl Exporter {
     }
 
     pub fn from_source(src: ExportSource) -> Self {
-        Self { renderer: PageRenderer::new(src.bytes, src.config), pages: src.pages }
+        Self { renderer: PageRenderer::new(src.bytes, src.config), pages: src.pages, sizes: src.sizes }
     }
 
     fn check(&self, page: usize) -> Result<(), String> {
         if page < self.pages { Ok(()) } else { Err(format!("page {} does not exist", page + 1)) }
+    }
+
+    /// Raster PostScript Level 2; EPS contains exactly one page. Text and vectors become pixels.
+    /// Page geometry includes crop, rotation and UserUnit, just like the displayed PDF.
+    pub fn postscript(&mut self, pages: &[usize], dpi: f64, eps: bool) -> Result<Vec<u8>, String> {
+        use std::fmt::Write as _;
+        if pages.is_empty() || pages.len() > 500 || (eps && pages.len() != 1) {
+            return Err("select 1–500 pages; EPS requires exactly one page".into());
+        }
+        if !dpi.is_finite() || !(18.0..=1200.0).contains(&dpi) {
+            return Err("resolution must be between 18 and 1200 dpi".into());
+        }
+        let mut out =
+            format!("%!PS-Adobe-3.0{}\n%%Creator: MyAIPDF\n%%LanguageLevel: 2\n%%Pages: {}\n", if eps { " EPSF-3.0" } else { "" }, pages.len());
+        for (k, &page) in pages.iter().enumerate() {
+            self.check(page)?;
+            let &[w, h] = self.sizes.get(page).ok_or("page size is unavailable")?;
+            if !w.is_finite() || !h.is_finite() || w <= 0.0 || h <= 0.0 || w.max(h) > 1_000_000.0 {
+                return Err("invalid page size".into());
+            }
+            if k == 0 {
+                if eps {
+                    // Writing to String is infallible.
+                    let _ = writeln!(out, "%%BoundingBox: 0 0 {:.0} {:.0}\n%%HiResBoundingBox: 0 0 {w:.4} {h:.4}", w.ceil(), h.ceil());
+                }
+                out.push_str("%%EndComments\n");
+            }
+            let r = self.renderer.render(RenderRequest { page, scale: (dpi / 72.0) as f32, ..Default::default() });
+            if let Some(e) = r.error {
+                return Err(format!("page {}: {e}", page + 1));
+            }
+            let image = encode_jpeg(r.width, r.height, &r.rgba, 100)?;
+            if out.len().saturating_add(image.len().saturating_mul(3)) > 512 * 1024 * 1024 {
+                return Err("PostScript export exceeds 512 MB; export fewer pages or reduce resolution".into());
+            }
+            let _ = writeln!(out, "%%Page: {} {}\ngsave", k + 1, k + 1);
+            if !eps {
+                let _ = writeln!(out, "<< /PageSize [{w:.4} {h:.4}] >> setpagedevice");
+            }
+            let _ = writeln!(
+                out,
+                "{w:.4} {h:.4} scale\n/DeviceRGB setcolorspace\n<< /ImageType 1 /Width {} /Height {} /BitsPerComponent 8 /Decode [0 1 0 1 0 1] /ImageMatrix [{} 0 0 -{} 0 {}] /DataSource currentfile /ASCIIHexDecode filter /DCTDecode filter >> image",
+                r.width, r.height, r.width, r.height, r.height
+            );
+            for chunk in image.chunks(40) {
+                for b in chunk {
+                    let _ = write!(out, "{b:02X}");
+                }
+                out.push('\n');
+            }
+            out.push_str(">\ngrestore\n");
+            if !eps {
+                out.push_str("showpage\n");
+            }
+            out.push_str("%%PageTrailer\n");
+        }
+        out.push_str("%%Trailer\n%%EOF\n");
+        Ok(out.into_bytes())
     }
 
     /// Page `page` (0-based) as a PNG at `dpi` (capped by the renderer's size limits).

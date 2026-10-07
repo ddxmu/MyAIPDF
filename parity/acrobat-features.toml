@@ -5395,11 +5395,11 @@ title = "Encrypt with certificates for recipients"
 area = "G"
 tier = "P1"
 milestone = "M8"
-status = "planned"
-commands = []
-tools = []
-evidence = []
-notes = ""
+status = "partial"
+commands = ["protect.certificate"]
+tools = ["doc_encrypt_certificate", "doc_open"]
+evidence = ["crates/automation/tests/automation.rs::certificate_encryption_open_edit_save_and_recovery", "crates/ui-egui/tests/certificate.rs::certificate_dialog_saves_copy_and_opens_with_private_key", "crates/sign/src/public_key.rs::cms_openssl_interoperability"]
+notes = "RSA 2048–4096, adbe.pkcs7.s5/AESV3, 1–16 recipients with shared read/print or full-control rights. Separate full-rewrite copy only; signed PDFs refused. Import PKCS#12 to reopen; saves and recovery stay encrypted. Single crypt filter/AES-256 CMS only; no legacy CMS/RC2, EC, hardware keychain decryption, per-recipient UI permissions or live revocation validation. External OpenSSL CMS and PDFBox 3.0.8 decryption verified locally."
 
 [[feature]]
 id = "protect.recipient-permissions"
@@ -7039,11 +7039,11 @@ title = "Export to PostScript"
 area = "J"
 tier = "P2"
 milestone = "M10"
-status = "planned"
-commands = []
-tools = []
-evidence = []
-notes = ""
+status = "partial"
+commands = ["export.ps"]
+tools = ["doc_export_postscript"]
+evidence = ["crates/automation/tests/automation.rs::postscript_eps_export_through_tools", "crates/ui-egui/tests/export.rs::export_dialogs_write_images_and_text"]
+notes = "PostScript Level 2, rasterized JPEG pages, selected resolution/range, displayed crop/rotation geometry; one multi-page PS. No editable text/vector preservation, ICC or prepress fidelity claim."
 
 [[feature]]
 id = "create.export-eps"
@@ -7051,11 +7051,11 @@ title = "Export to EPS"
 area = "J"
 tier = "P2"
 milestone = "M10"
-status = "planned"
-commands = []
-tools = []
-evidence = []
-notes = ""
+status = "partial"
+commands = ["export.ps"]
+tools = ["doc_export_postscript"]
+evidence = ["crates/automation/tests/automation.rs::postscript_eps_export_through_tools", "crates/ui-egui/tests/export.rs::export_dialogs_write_images_and_text"]
+notes = "EPSF-3.0 with integer/HiRes bounding boxes; one rasterized EPS per page in UI (tool requires one). Text and vectors become JPEG pixels; no vector/colour-profile parity claim."
 
 [[feature]]
 id = "create.export-ocr"

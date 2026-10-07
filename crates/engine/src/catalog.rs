@@ -77,7 +77,7 @@ pub static TOOL_GROUPS: &[ToolGroup] = &[
                 item("HTML web page", "file-symlink", "export.html", Ready),
                 item("Rich Text Format (.rtf)", "file-text", "export.rtf", Ready),
                 item("Text (plain)", "type", "export.text", Ready),
-                item("PostScript / EPS", "file-down", "export.ps", Planned("M10")),
+                item("PostScript / EPS", "file-down", "export.ps", Ready),
             ],
         }],
     },
@@ -285,7 +285,7 @@ pub static TOOL_GROUPS: &[ToolGroup] = &[
             ToolSection {
                 title: "Advanced options",
                 items: &[
-                    item("Encrypt with certificate", "file-lock-2", "protect.certificate", Planned("M8")),
+                    item("Encrypt with certificate", "file-lock-2", "protect.certificate", Ready),
                     item("Security properties", "shield-check", "protect.properties", Ready),
                     item("Remove security", "lock-open", "protect.remove", Ready),
                 ],

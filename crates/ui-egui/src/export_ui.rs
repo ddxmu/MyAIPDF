@@ -18,6 +18,8 @@ pub enum ExportKind {
     Text,
     /// Export all images: the images pages use, as files.
     AllImages,
+    PostScript,
+    Eps,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -46,11 +48,25 @@ pub(crate) fn body(ui: &mut egui::Ui, app: &mut PrintCraftApp, t: &Tokens, kind:
             ExportKind::Image => "Export to Image",
             ExportKind::Text => "Export to Text",
             ExportKind::AllImages => "Export All Images",
+            ExportKind::PostScript | ExportKind::Eps => "PostScript / EPS 导出",
         })
         .font(theme::semibold(18.0)),
     );
     ui.add_space(8.0);
-    if kind == ExportKind::Image {
+    if matches!(kind, ExportKind::PostScript | ExportKind::Eps) {
+        ui.label("按页面图像保留版式；文字与矢量转为像素。PS 合并为一个文件，EPS 每页一个文件。");
+        ui.horizontal(|ui| {
+            ui.label("输出格式");
+            let eps = app.export_eps;
+            if ui.selectable_label(!eps, "PostScript (.ps)").clicked() {
+                app.export_eps = false;
+            }
+            if ui.selectable_label(eps, "EPS (.eps)").clicked() {
+                app.export_eps = true;
+            }
+        });
+    }
+    if matches!(kind, ExportKind::Image | ExportKind::PostScript | ExportKind::Eps) {
         ui.horizontal(|ui| {
             ui.label(crate::i18n::ui_tr(ui, "Resolution"));
             egui::ComboBox::from_id_salt("export-dpi").selected_text(format!("{} pixels/inch", d.dpi)).show_ui(ui, |ui| {
@@ -59,28 +75,30 @@ pub(crate) fn body(ui: &mut egui::Ui, app: &mut PrintCraftApp, t: &Tokens, kind:
                 }
             });
         });
-        ui.horizontal(|ui| {
-            ui.label(crate::i18n::ui_tr(ui, "Format"));
-            let mut quality = match d.format {
-                ImageFormat::Jpeg { quality } => quality,
-                _ => 85,
-            };
-            egui::ComboBox::from_id_salt("export-format").selected_text(d.format.label()).show_ui(ui, |ui| {
-                for f in [ImageFormat::Png, ImageFormat::Jpeg { quality }, ImageFormat::Tiff] {
-                    let on = std::mem::discriminant(&d.format) == std::mem::discriminant(&f);
-                    if ui.selectable_label(on, f.label()).clicked() {
-                        d.format = f;
+        if kind == ExportKind::Image {
+            ui.horizontal(|ui| {
+                ui.label(crate::i18n::ui_tr(ui, "Format"));
+                let mut quality = match d.format {
+                    ImageFormat::Jpeg { quality } => quality,
+                    _ => 85,
+                };
+                egui::ComboBox::from_id_salt("export-format").selected_text(d.format.label()).show_ui(ui, |ui| {
+                    for f in [ImageFormat::Png, ImageFormat::Jpeg { quality }, ImageFormat::Tiff] {
+                        let on = std::mem::discriminant(&d.format) == std::mem::discriminant(&f);
+                        if ui.selectable_label(on, f.label()).clicked() {
+                            d.format = f;
+                        }
+                    }
+                });
+                if let ImageFormat::Jpeg { .. } = d.format {
+                    ui.label(crate::i18n::ui_tr(ui, "Quality"));
+                    if ui.add(egui::Slider::new(&mut quality, 10..=100)).changed() {
+                        d.format = ImageFormat::Jpeg { quality };
                     }
                 }
             });
-            if let ImageFormat::Jpeg { .. } = d.format {
-                ui.label(crate::i18n::ui_tr(ui, "Quality"));
-                if ui.add(egui::Slider::new(&mut quality, 10..=100)).changed() {
-                    d.format = ImageFormat::Jpeg { quality };
-                }
-            }
-        });
-        ui.label(egui::RichText::new(format!("One {} file per page, named after the document.", d.format.label())).small().color(t.text_faint));
+            ui.label(egui::RichText::new(format!("One {} file per page, named after the document.", d.format.label())).small().color(t.text_faint));
+        }
     } else if kind == ExportKind::AllImages {
         ui.horizontal(|ui| {
             ui.label(crate::i18n::ui_tr(ui, "Exclude images smaller than"));
@@ -164,6 +182,19 @@ fn run(
     match kind {
         // Handled above.
         ExportKind::AllImages => String::new(),
+        ExportKind::PostScript => match ex.postscript(&pages, dpi, false).and_then(|bytes| sink(&format!("{stem}.ps"), bytes)) {
+            Ok(()) => format!("已导出 {total} 页 PostScript"),
+            Err(e) => format!("Export stopped: {e}"),
+        },
+        ExportKind::Eps => {
+            for (k, &p) in pages.iter().enumerate() {
+                set(k, None);
+                if let Err(e) = ex.postscript(&[p], dpi, true).and_then(|bytes| sink(&format!("{stem}_page_{}.eps", p + 1), bytes)) {
+                    return format!("Export stopped: {e}");
+                }
+            }
+            format!("已导出 {total} 个 EPS 文件")
+        }
         ExportKind::Image => {
             for (k, p) in pages.iter().enumerate() {
                 set(k, None);
@@ -187,6 +218,7 @@ fn run(
 impl PrintCraftApp {
     /// Start exporting the active document with the dialog's settings.
     pub(crate) fn start_export(&mut self, kind: ExportKind) {
+        let kind = if kind == ExportKind::PostScript && self.export_eps { ExportKind::Eps } else { kind };
         let Some((_, id)) = self.active_ids() else { return };
         let Some(doc) = self.session.get(id) else { return };
         let src = doc.export_source();

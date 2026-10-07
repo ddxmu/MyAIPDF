@@ -125,7 +125,10 @@ pub fn tools() -> Vec<ToolDef> {
             .ro().with(schema(json!({"api_url":{"type":"string"},"api_key":{"type":"string"},"model":{"type":"string"},"prompt":{"type":"string"},"context":{"type":"string"}}), &["api_url","model","prompt"])),
         t("doc_open", "Open a PDF", "Open a PDF file and return its document id, page count and whether it can be edited.")
             .cmd("file.open")
-            .with(schema(json!({ "path": { "type": "string" }, "password": { "type": "string", "description": "User or owner password for encrypted files." } }), &["path"])),
+            .with(schema(json!({ "path": { "type": "string" }, "password": { "type": "string", "description": "User or owner password for encrypted files." }, "identity": { "type": "string", "description": "PKCS#12 .p12/.pfx private key for certificate-protected PDFs; confined to root." }, "identity_password": { "type": "string" } }), &["path"])),
+        t("doc_encrypt_certificate", "Encrypt with certificates", "Save a separate AES-256/adbe.pkcs7.s5 certificate-encrypted PDF. 1–16 RSA recipient certificates; one shared read/print or full-control permission set. Requires confirm:true, a NEW target path and owner access. Never overwrites the original. Private keys are not required to encrypt.")
+            .cmd("protect.certificate").destructive()
+            .with(schema(json!({ "doc":doc(), "path":{"type":"string"}, "certificates":{"type":"array","items":{"type":"string"},"minItems":1,"maxItems":16}, "full_control":{"type":"boolean"}, "confirm":{"type":"boolean"} }), &["doc","path","certificates","confirm"])),
         t("doc_list", "List open documents", "List the open documents with their ids, page counts and unsaved state.").ro().with(schema(json!({}), &[])),
         t("doc_info", "Inspect a document", "Metadata, page sizes and labels, bookmarks, annotations, form fields, links, layers, attachments, fonts, security and repair notes.")
             .ro()
@@ -741,6 +744,9 @@ pub fn tools() -> Vec<ToolDef> {
                 }),
                 &["doc", "folder"],
             )),
+        t("doc_export_postscript", "Export PostScript / EPS", "Raster PostScript Level 2 preserving displayed page geometry and unsaved edits. Text/vectors become pixels. EPS requires one page; PS accepts up to 500 pages. Writes atomically within root.")
+            .cmd("export.ps")
+            .with(schema(json!({ "doc": doc(), "path": { "type": "string" }, "pages": pages("default all; EPS exactly one"), "dpi": { "type": "number", "minimum": 18, "maximum": 1200 }, "eps": { "type": "boolean" } }), &["doc", "path"])),
         t("accessibility_check", "Check for accessibility", "Run the Accessibility Checker's full check (32 rules in 7 categories: document, page_content, forms, alternate_text, tables, lists, headings). Each rule is passed, failed (with findings and pages), manual (needs a person) or skipped. Colour contrast is off unless all is true; rules (ids such as tagged-pdf, figures-alt-text) or categories narrow the check; pages limit the page rules.")
             .ro()
             .cmd("a11y.check")

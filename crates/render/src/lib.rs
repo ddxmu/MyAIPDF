@@ -26,6 +26,8 @@ pub enum OpenError {
     Invalid(String),
     #[error("the document is protected by a password")]
     NeedsPassword,
+    #[error("请选择收件人的 .p12/.pfx 证书私钥以打开此 PDF")]
+    NeedsCertificate,
     #[error("the password is incorrect")]
     WrongPassword,
     #[error("{0}")]

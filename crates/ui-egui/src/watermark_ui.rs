@@ -75,10 +75,10 @@ pub(crate) fn panel(app: &mut PrintCraftApp, ui: &mut egui::Ui) {
     w.hovered.bg_stroke = egui::Stroke::new(1.2, t.accent);
     w.active.bg_stroke = egui::Stroke::new(1.2, t.accent);
     ui.horizontal(|ui| {
-        ui.heading("水印去除");
-        if ui.button("返回工具").clicked() {
+        if widgets::ghost_button(ui, "chevron-left", "返回工具").on_hover_text("返回工具菜单").clicked() {
             app.left = LeftPanel::AllTools;
         }
+        ui.heading("水印去除");
     });
     ui.label(egui::RichText::new("1 分析  ·  2 选择  ·  3 删除").color(t.accent_text));
     ui.add_space(8.0);

@@ -73,6 +73,32 @@ pub struct EncryptDict {
     pub stm_f: Vec<u8>,
     pub str_f: Vec<u8>,
     pub ef_f: Vec<u8>,
+    pub sub_filter: Vec<u8>,
+    pub recipients: Vec<Vec<u8>>,
+}
+
+/// The decrypted 24-byte CMS payload. Never serialize or log this in application settings.
+#[derive(Clone, PartialEq)]
+pub struct PublicKeyAuth {
+    seed: [u8; 20],
+    permissions: i32,
+}
+
+impl std::fmt::Debug for PublicKeyAuth {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("PublicKeyAuth([redacted])")
+    }
+}
+
+impl PublicKeyAuth {
+    pub fn from_payload(payload: &[u8]) -> Result<Self, CryptError> {
+        let p: &[u8; 24] = payload.try_into().map_err(|_| CryptError::Malformed("CMS payload must contain 24 bytes".into()))?;
+        let mut seed = [0; 20];
+        seed.copy_from_slice(&p[..20]);
+        let mut bits = [0; 4];
+        bits.copy_from_slice(&p[20..]);
+        Ok(Self { seed, permissions: i32::from_be_bytes(bits) })
+    }
 }
 
 /// Which password authenticated the document.
@@ -141,6 +167,56 @@ pub struct SecurityHandler {
 }
 
 impl SecurityHandler {
+    /// adbe.pkcs7.s5, AES-256. The caller authenticates CMS with the recipient's private key.
+    pub fn open_public(dict: EncryptDict, auth: &PublicKeyAuth) -> Result<Self, CryptError> {
+        let selected = |n: &[u8]| dict.crypt_filters.iter().any(|(name, m)| name == n && *m == Method::Aes256);
+        if dict.filter != b"Adobe.PubSec"
+            || dict.sub_filter != b"adbe.pkcs7.s5"
+            || dict.v != 5
+            || dict.stm_f != dict.str_f
+            || !selected(&dict.stm_f)
+            || !selected(&dict.str_f)
+            || (!dict.ef_f.is_empty() && (dict.ef_f != dict.stm_f || !selected(&dict.ef_f)))
+            || dict.crypt_filters.len() != 1
+        {
+            return Err(CryptError::Unsupported("certificate security requires adbe.pkcs7.s5 / AESV3".into()));
+        }
+        if dict.recipients.is_empty() || dict.recipients.len() > 16 || dict.recipients.iter().any(|r| r.is_empty() || r.len() > 16_384) {
+            return Err(CryptError::Malformed("certificate recipient limit: 1–16 envelopes, at most 16 KB each".into()));
+        }
+        let mut hash = Sha256::new();
+        hash.update(auth.seed);
+        for r in &dict.recipients {
+            hash.update(r);
+        }
+        if !dict.encrypt_metadata {
+            hash.update([0xFF; 4]);
+        }
+        let mut dict = dict;
+        dict.p = auth.permissions;
+        let owner = auth.permissions & 2 != 0;
+        Ok(Self { dict, key: hash.finalize().to_vec(), auth: if owner { Auth::Owner } else { Auth::User }, recovered_user: None })
+    }
+
+    /// New public-key encryption, using CMS envelopes already prepared by the caller.
+    pub fn create_public(recipients: Vec<Vec<u8>>, auth: &PublicKeyAuth) -> Result<Self, CryptError> {
+        Self::open_public(
+            EncryptDict {
+                filter: b"Adobe.PubSec".to_vec(),
+                sub_filter: b"adbe.pkcs7.s5".to_vec(),
+                v: 5,
+                length_bits: 256,
+                recipients,
+                encrypt_metadata: true,
+                crypt_filters: vec![(b"DefaultCryptFilter".to_vec(), Method::Aes256)],
+                stm_f: b"DefaultCryptFilter".to_vec(),
+                str_f: b"DefaultCryptFilter".to_vec(),
+                ef_f: b"DefaultCryptFilter".to_vec(),
+                ..Default::default()
+            },
+            auth,
+        )
+    }
     /// Authenticate with `password` (tried as owner password, then user password). `None`
     /// tries the empty password, which opens documents that only have an owner password.
     pub fn open(dict: EncryptDict, id0: &[u8], password: Option<&str>) -> Result<Self, CryptError> {

@@ -226,9 +226,21 @@ impl Certificate {
     /// file" makes. Valid from `from` for `years`; usable for signing (digital signature and
     /// non-repudiation).
     pub fn self_signed(name: &Name, key: &PrivateKey, from: Time, years: u32, serial: &[u8]) -> Result<Certificate, SignError> {
+        Self::self_signed_usage(name, key, from, years, serial, false)
+    }
+
+    /// An RSA digital ID usable for certificate encryption as well as signing.
+    pub fn self_signed_encryption(name: &Name, key: &PrivateKey, from: Time, years: u32, serial: &[u8]) -> Result<Certificate, SignError> {
+        if !matches!(key.public_key(), PublicKey::Rsa { .. }) {
+            return Err(SignError::Unsupported("encryption digital IDs require RSA".into()));
+        }
+        Self::self_signed_usage(name, key, from, years, serial, true)
+    }
+
+    fn self_signed_usage(name: &Name, key: &PrivateKey, from: Time, years: u32, serial: &[u8], encryption: bool) -> Result<Certificate, SignError> {
         let alg = key.preferred_digest();
         let sig_alg = key.signature_algorithm(alg);
-        let until = Time { year: from.year + years, ..from };
+        let until = Time { year: from.year.checked_add(years).ok_or_else(|| SignError::Malformed("certificate validity overflow".into()))?, ..from };
         let spki = key.public_key().spki();
         let ski = DigestAlg::Sha1.digest(&[&spki]);
         let ext = |o: &str, critical: bool, value: &[u8]| {
@@ -239,7 +251,7 @@ impl Certificate {
             }
         };
         // keyUsage: digitalSignature (bit 0) and nonRepudiation (bit 1) → 0b1100_0000, 6 unused bits.
-        let key_usage = der::tlv(tag::BIT_STRING, &[6, 0b1100_0000]);
+        let key_usage = der::tlv(tag::BIT_STRING, if encryption { &[5, 0b1110_0000] } else { &[6, 0b1100_0000] });
         let extensions = der::seq(&[
             &ext("2.5.29.15", true, &key_usage),
             &ext("2.5.29.14", false, &der::octets(&ski)),

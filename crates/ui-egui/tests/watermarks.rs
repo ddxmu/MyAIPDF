@@ -23,6 +23,24 @@ fn harness() -> Harness<'static, PrintCraftApp> {
 }
 
 #[test]
+fn watermark_return_arrow_preserves_document_and_analysis() {
+    let mut h = harness();
+    h.get_by_label("分析水印").click();
+    h.run_steps(3);
+    let id = h.state().views[0].id;
+    let bytes = h.state().session.save_bytes(id).unwrap();
+    let count = h.state().watermarks.candidates.len();
+    if let Ok(out) = std::env::var("MYAIPDF_UI_QA_DIR") {
+        h.render().unwrap().save(std::path::Path::new(&out).join("watermark-back-arrow.png")).unwrap();
+    }
+    h.get_by_label("返回工具").click();
+    h.run_steps(3);
+    assert_eq!(h.state().left, LeftPanel::AllTools);
+    assert_eq!(h.state().watermarks.candidates.len(), count);
+    assert_eq!(h.state().session.save_bytes(id).unwrap(), bytes);
+}
+
+#[test]
 fn watermark_panel_analysis_selection_confirmation_and_undo() {
     let mut h = harness();
     h.get_by_label("分析水印").click();

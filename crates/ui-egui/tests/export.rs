@@ -44,4 +44,21 @@ fn export_dialogs_write_images_and_text() {
     h.get_by_label("Export").click();
     h.run_steps(4);
     h.get_by_label_contains("Exported 0 images");
+    h.state_mut().execute("export.ps");
+    h.run_steps(2);
+    h.get_by_label("PostScript / EPS 导出");
+    h.get_by_label("Export").click();
+    h.run_steps(4);
+    assert!(std::fs::read(dir.join("doc.ps")).unwrap().starts_with(b"%!PS-Adobe-3.0\n"));
+    h.state_mut().execute("export.ps");
+    h.run_steps(2);
+    h.get_by_label("EPS (.eps)").click();
+    h.run_steps(2);
+    h.get_by_label("Export").click();
+    h.run_steps(4);
+    for p in 1..=2 {
+        let data = std::fs::read(dir.join(format!("doc_page_{p}.eps"))).unwrap();
+        assert!(data.starts_with(b"%!PS-Adobe-3.0 EPSF-3.0"));
+        assert!(data.windows(b"%%BoundingBox: 0 0 200 100".len()).any(|x| x == b"%%BoundingBox: 0 0 200 100"));
+    }
 }

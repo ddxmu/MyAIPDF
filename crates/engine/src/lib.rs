@@ -120,6 +120,30 @@ struct Keys {
     render: Option<String>,
     /// What the editor re-opens a saved file with: the strongest password known (owner if any).
     reopen: Option<String>,
+    certificate: Option<printcraft_cos::PublicKeyAuth>,
+}
+
+impl Keys {
+    fn open(&self, bytes: Arc<Vec<u8>>) -> Result<printcraft_cos::Document, printcraft_cos::CosError> {
+        match &self.certificate {
+            Some(auth) => printcraft_cos::Document::open_with_certificate(bytes, &|_| Ok(auth.clone())),
+            None => printcraft_cos::Document::open_with_password(bytes, self.reopen.as_deref()),
+        }
+    }
+}
+
+/// The renderer's in-memory view; the editor and every normal save retain certificate security.
+fn view_bytes(cos: &printcraft_cos::Document) -> Result<Arc<Vec<u8>>, EditError> {
+    if cos.output_handler().is_some_and(|h| h.dict().filter == b"Adobe.PubSec") {
+        let mut view = cos.clone();
+        view.remove_encryption();
+        return printcraft_cos::write_full(&view, &SaveOptions::default()).map(Arc::new).map_err(|e| EditError::Write(e.to_string()));
+    }
+    if cos.is_modified() {
+        write_incremental(cos, &SaveOptions::default()).map(Arc::new).map_err(|e| EditError::Write(e.to_string()))
+    } else {
+        Ok(cos.bytes().clone())
+    }
 }
 
 /// What an edit can change, and so what the view data must be rebuilt from.
@@ -219,6 +243,9 @@ pub struct Document {
 }
 
 impl Document {
+    pub fn uses_certificate_security(&self) -> bool {
+        self.editor.as_ref().is_some_and(|e| e.cos.output_handler().is_some_and(|h| h.dict().filter == b"Adobe.PubSec"))
+    }
     pub fn watermark_candidates(&self, pages: &[usize], include_all: bool) -> Result<Vec<WatermarkCandidate>, String> {
         let editor = self.editor.as_ref().ok_or("此文档不能读取为可编辑内容")?;
         guard(|| printcraft_edit::watermarks::analyze(&editor.cos, pages, include_all))?.map_err(|e| e.to_string())
@@ -1620,9 +1647,11 @@ fn parse_ymd(d: &str) -> Option<(i64, u32, u32)> {
 /// The passwords after `edit`, if it changes them.
 fn keys_after(edit: &Edit) -> Option<Keys> {
     match edit {
-        Edit::Protect(p) => {
-            Some(Keys { render: p.open_password.clone(), reopen: p.permissions_password.clone().or_else(|| p.open_password.clone()) })
-        }
+        Edit::Protect(p) => Some(Keys {
+            render: p.open_password.clone(),
+            reopen: p.permissions_password.clone().or_else(|| p.open_password.clone()),
+            certificate: None,
+        }),
         Edit::RemoveProtection => Some(Keys::default()),
         Edit::Batch { edits, .. } => edits.iter().rev().find_map(keys_after),
         _ => None,
@@ -1782,6 +1811,9 @@ impl Session {
     /// "<name> (revision n)".
     pub fn open_revision(&mut self, id: DocId, n: usize) -> Result<DocId, String> {
         let doc = self.get(id).ok_or("no such document")?;
+        if doc.editor.as_ref().is_some_and(|e| e.keys.certificate.is_some()) {
+            return Err("证书加密文档暂不支持单独打开历史版本，请使用加密原件".into());
+        }
         let ends = doc.revision_ends();
         let end = *n.checked_sub(1).and_then(|i| ends.get(i)).ok_or_else(|| format!("the document has {} revision(s)", ends.len()))?;
         let name = format!("{} (revision {n}).pdf", doc.name.trim_end_matches(".pdf"));
@@ -1791,15 +1823,63 @@ impl Session {
 
     pub fn open(&mut self, name: impl Into<String>, path: Option<String>, bytes: Arc<Vec<u8>>, password: Option<&str>) -> Result<DocId, OpenError> {
         let name = name.into();
-        guard(|| self.open_unguarded(name, path, bytes, password))
+        guard(|| self.open_unguarded(name, path, bytes, password, None))
             .unwrap_or_else(|m| Err(OpenError::Invalid(format!("reading it failed unexpectedly ({m})"))))
     }
 
-    fn open_unguarded(&mut self, name: String, path: Option<String>, bytes: Arc<Vec<u8>>, password: Option<&str>) -> Result<DocId, OpenError> {
-        let cos = std::panic::catch_unwind(|| printcraft_cos::Document::open_with_password(bytes.clone(), password));
+    pub fn open_with_certificate(
+        &mut self,
+        name: impl Into<String>,
+        path: Option<String>,
+        bytes: Arc<Vec<u8>>,
+        identity: &printcraft_sign::DigitalId,
+    ) -> Result<DocId, OpenError> {
+        let name = name.into();
+        guard(|| self.open_unguarded(name, path, bytes, None, Some(identity))).unwrap_or_else(|m| Err(OpenError::Invalid(m)))
+    }
+
+    fn open_unguarded(
+        &mut self,
+        name: String,
+        path: Option<String>,
+        bytes: Arc<Vec<u8>>,
+        password: Option<&str>,
+        identity: Option<&printcraft_sign::DigitalId>,
+    ) -> Result<DocId, OpenError> {
+        let mut certificate = None;
+        let cos = if let Some(identity) = identity {
+            let recovered = std::cell::RefCell::new(None);
+            let result = printcraft_cos::Document::open_with_certificate(bytes.clone(), &|recipients| {
+                let auth =
+                    printcraft_sign::public_key::unlock(recipients, identity).map_err(|e| printcraft_cos::CosError::Security(e.to_string()))?;
+                *recovered.borrow_mut() = Some(auth.clone());
+                Ok(auth)
+            });
+            certificate = recovered.into_inner();
+            Ok(result)
+        } else {
+            std::panic::catch_unwind(|| printcraft_cos::Document::open_with_password(bytes.clone(), password))
+        };
+        if matches!(&cos, Ok(Err(printcraft_cos::CosError::NeedsCertificate))) {
+            return Err(OpenError::NeedsCertificate);
+        }
+        if identity.is_some()
+            && let Ok(Err(e)) = &cos
+        {
+            return Err(OpenError::Unsupported(e.to_string()));
+        }
+        let protected_size = bytes.len();
+        let bytes = if certificate.is_some() {
+            match &cos {
+                Ok(Ok(c)) => view_bytes(c).map_err(|e| OpenError::Invalid(e.to_string()))?,
+                _ => return Err(OpenError::Invalid("certificate unlock failed".into())),
+            }
+        } else {
+            bytes
+        };
         // The renderer authenticates on its own. It cannot use the owner password of R2–R4
         // files, so give it the user password that owner authentication recovers.
-        let (info, render_password) = match inspect(bytes.clone(), password) {
+        let (mut info, render_password) = match inspect(bytes.clone(), password) {
             Ok(info) => (info, password.map(str::to_owned)),
             Err(OpenError::WrongPassword) => {
                 let user = match &cos {
@@ -1811,11 +1891,15 @@ impl Session {
             }
             Err(e) => return Err(e),
         };
+        if certificate.is_some() {
+            info.encrypted = true;
+            info.file_size = protected_size;
+        }
         let config = RenderConfig { password: render_password.as_deref().map(Arc::from), ..Default::default() };
         let renderer = RenderPool::new(bytes.clone(), render_threads(), config.clone());
         let (editor, read_only_reason) = match cos {
             Ok(Ok(cos)) => {
-                let keys = Keys { render: render_password.clone(), reopen: password.map(str::to_owned) };
+                let keys = Keys { render: render_password.clone(), reopen: password.map(str::to_owned), certificate };
                 (Some(Editor { cos, undo: Vec::new(), redo: Vec::new(), keys }), None)
             }
             Ok(Err(e)) => (None, Some(e.to_string())),
@@ -1994,7 +2078,10 @@ impl Session {
     /// Comment and form edits skip the full re-inspection (seconds on very large files): the
     /// comment list and field values are re-read from the object graph instead.
     fn refresh_scoped(doc: &mut Document, scope: Scope) -> Result<(), EditError> {
-        if scope == Scope::Full || doc.info.encrypted != doc.editor.as_ref().is_some_and(|e| e.cos.output_handler().is_some()) {
+        if scope == Scope::Full
+            || doc.editor.as_ref().is_some_and(|e| e.keys.certificate.is_some())
+            || doc.info.encrypted != doc.editor.as_ref().is_some_and(|e| e.cos.output_handler().is_some())
+        {
             return Self::refresh(doc);
         }
         let Some(editor) = doc.editor.as_ref() else { return Ok(()) };
@@ -2035,14 +2122,13 @@ impl Session {
     /// Rebuild working bytes, inspection and renderer from the current edit state.
     fn refresh(doc: &mut Document) -> Result<(), EditError> {
         let Some(editor) = doc.editor.as_ref() else { return Ok(()) };
-        let bytes = if editor.cos.is_modified() {
-            Arc::new(write_incremental(&editor.cos, &SaveOptions::default()).map_err(|e| EditError::Write(e.to_string()))?)
-        } else {
-            editor.cos.bytes().clone()
-        };
+        let bytes = view_bytes(&editor.cos)?;
         let info = inspect(bytes.clone(), doc.password.as_deref()).map_err(|e| EditError::Reopen(e.to_string()))?;
         // Keep the user's layer choices where the layers still exist.
         let mut info = info;
+        if editor.cos.output_handler().is_some_and(|h| h.dict().filter == b"Adobe.PubSec") {
+            info.encrypted = true;
+        }
         for l in &mut info.layers {
             if let Some(old) = doc.info.layers.iter().find(|o| o.id == l.id) {
                 l.visible = old.visible;
@@ -2082,6 +2168,25 @@ impl Session {
         guard(|| write_full(&editor.cos, &opts)).map_err(EditError::Write)?.map(Arc::new).map_err(|e| EditError::Write(e.to_string()))
     }
 
+    /// Encrypt an independent copy; never change the source tab, its history or its save path.
+    pub fn certificate_encrypted_bytes(&self, id: DocId, certs: &[printcraft_sign::Certificate], full_control: bool) -> Result<Arc<Vec<u8>>, String> {
+        let doc = self.get(id).ok_or("no such document")?;
+        if !doc.allows_security_change() {
+            return Err("需要所有者权限才能更改安全设置".into());
+        }
+        if doc.is_signed() {
+            return Err("已签名的 PDF 不能重写加密，请先使用未签名副本".into());
+        }
+        let mut cos = doc.editor.as_ref().ok_or("此文档无法读取为可编辑对象")?.cos.clone();
+        guard(|| {
+            let (recipients, auth) = printcraft_sign::public_key::recipients(certs, full_control, self.now().ok_or("system clock unavailable")?)
+                .map_err(|e| e.to_string())?;
+            cos.set_certificate_encryption(recipients, &auth).map_err(|e| e.to_string())?;
+            write_full(&cos, &SaveOptions::default()).map(Arc::new).map_err(|e| e.to_string())
+        })
+        .map_err(|e| e.to_string())?
+    }
+
     /// Record a successful save of `bytes` (to `path`, if any): rebase editing on the saved file
     /// so the next save appends only newer edits. Undo history is kept.
     pub fn mark_saved(&mut self, id: DocId, bytes: Arc<Vec<u8>>, path: Option<String>) -> Result<(), EditError> {
@@ -2089,8 +2194,7 @@ impl Session {
         if let Some(editor) = doc.editor.as_mut() {
             // An encrypted file needs the password it is protected with now (the owner
             // password when known, so saving never downgrades this session's rights).
-            editor.cos = printcraft_cos::Document::open_with_password(bytes.clone(), editor.keys.reopen.as_deref())
-                .map_err(|e| EditError::Reopen(e.to_string()))?;
+            editor.cos = editor.keys.open(bytes.clone()).map_err(|e| EditError::Reopen(e.to_string()))?;
         }
         if let Some(p) = path {
             doc.name = std::path::Path::new(&p).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| p.clone());
@@ -2114,7 +2218,7 @@ impl Session {
         candidates.push(Keys::default());
         let (cos, keys) = candidates
             .into_iter()
-            .find_map(|k| printcraft_cos::Document::open_with_password(base.clone(), k.reopen.as_deref()).ok().map(|c| (c, k)))
+            .find_map(|k| k.open(base.clone()).ok().map(|c| (c, k)))
             .ok_or_else(|| EditError::Reopen("the saved file can't be opened".into()))?;
         editor.cos = cos;
         editor.keys = keys;
@@ -2362,12 +2466,23 @@ impl Session {
         let mut out = Vec::new();
         for d in &mut self.docs {
             if d.dirty && d.generation != d.snapshot_generation {
+                // The display copy of certificate-protected documents exists only in memory.
+                // Recovery must use the canonical encrypted object graph, never that view.
+                let bytes = if d.editor.as_ref().is_some_and(|e| e.keys.certificate.is_some()) {
+                    let Some(editor) = &d.editor else { continue };
+                    match write_incremental(&editor.cos, &SaveOptions::default()) {
+                        Ok(b) => Arc::new(b),
+                        Err(_) => continue, // retry at the next autosave; never fall back to plaintext
+                    }
+                } else {
+                    d.bytes.clone()
+                };
                 d.snapshot_generation = d.generation;
                 out.push(RecoverySnapshot {
                     doc: d.id,
                     name: d.name.clone(),
                     path: d.path.clone(),
-                    bytes: d.bytes.clone(),
+                    bytes,
                     encrypted: d.info.encrypted || d.editor.as_ref().is_some_and(|e| e.cos.security().is_some()),
                 });
             }

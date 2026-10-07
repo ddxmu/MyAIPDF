@@ -361,6 +361,7 @@ impl Automation {
                 self.apply(&a, Edit::SetBookmarkPage { path, page })?
             }
             "doc_protect" => self.doc_protect(&a)?,
+            "doc_encrypt_certificate" => self.doc_encrypt_certificate(&a)?,
             "page_replace" => {
                 let pages = self.pages(&a, "pages")?;
                 let path = self.resolve(a.str("path")?, false)?;
@@ -581,7 +582,7 @@ impl Automation {
                 let new = self.session.open_revision(id, n).map_err(failed)?;
                 summary(self.session.get(new).ok_or_else(|| failed("the document vanished"))?)
             }
-            "doc_export_images" | "doc_export_text" | "doc_export_all_images" => self.export(name, &a)?,
+            "doc_export_images" | "doc_export_text" | "doc_export_all_images" | "doc_export_postscript" => self.export(name, &a)?,
             "doc_header_footer" | "doc_watermark" | "doc_background" | "doc_remove_marks" => self.marks(name, &a)?,
             "watermark_analyze" => {
                 let pages = self.pages(&a, "pages")?;
@@ -754,7 +755,15 @@ impl Automation {
         let path = self.resolve(a.str("path")?, false)?;
         let bytes = std::fs::read(&path).map_err(|e| failed(format!("{}: {e}", path.display())))?;
         let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-        let id = self.session.open(name, Some(path.to_string_lossy().into_owned()), Arc::new(bytes), a.opt_str("password")?).map_err(failed)?;
+        let id = if let Some(identity) = a.opt_str("identity")? {
+            let identity = self.resolve(identity, false)?;
+            let data = read_certificate_file(&identity, 4 * 1024 * 1024)?;
+            let identity = printcraft_engine::sign::pkcs12::open(&data, a.opt_str("identity_password")?.unwrap_or_default()).map_err(failed)?;
+            self.session.open_with_certificate(name, Some(path.to_string_lossy().into_owned()), Arc::new(bytes), &identity)
+        } else {
+            self.session.open(name, Some(path.to_string_lossy().into_owned()), Arc::new(bytes), a.opt_str("password")?)
+        }
+        .map_err(failed)?;
         let doc = self.session.get(id).ok_or_else(|| failed("the document vanished"))?;
         Ok(summary(doc))
     }
@@ -1076,6 +1085,12 @@ impl Automation {
         };
         let stem = doc.name.trim_end_matches(".pdf").trim_end_matches(".PDF").to_string();
         let mut ex = printcraft_engine::export::Exporter::new(doc);
+        if tool == "doc_export_postscript" {
+            let path = self.resolve(a.str("path")?, true)?;
+            let bytes = ex.postscript(&pages, a.opt_num("dpi")?.unwrap_or(150.0), a.opt_bool("eps")?.unwrap_or(false)).map_err(failed)?;
+            write_atomic(&path, &bytes)?;
+            return Ok(json!({ "path": path.to_string_lossy(), "pages": pages.len(), "bytes": bytes.len(), "rasterized": true }));
+        }
         if tool == "doc_export_text" {
             let path = self.resolve(a.str("path")?, true)?;
             let text = ex.text_of(&pages).map_err(failed)?;
@@ -1229,6 +1244,33 @@ impl Automation {
         let mut out = self.apply(a, Edit::Protect(p))?;
         out["security"] = security(self.doc(a)?);
         Ok(out)
+    }
+
+    fn doc_encrypt_certificate(&mut self, a: &Args) -> Result<Value> {
+        if a.opt_bool("confirm")? != Some(true) {
+            return Err(failed("证书加密另存需要 confirm: true"));
+        }
+        let target = self.resolve(a.str("path")?, true)?;
+        if target.exists() {
+            return Err(failed("加密副本必须使用新文件名，目标已存在"));
+        }
+        let paths = a.strs("certificates")?;
+        if paths.is_empty() || paths.len() > 16 {
+            return Err(failed("请选择 1–16 个收件人证书"));
+        }
+        let mut certs = Vec::new();
+        for p in paths {
+            let data = read_certificate_file(&self.resolve(p, false)?, 64 * 1024)?;
+            let mut c = printcraft_engine::sign::x509::load_certificates(&data).map_err(failed)?;
+            if c.len() != 1 {
+                return Err(failed("每个文件必须包含一个收件人证书"));
+            }
+            certs.append(&mut c);
+        }
+        let doc = self.doc(a)?;
+        let bytes = self.session.certificate_encrypted_bytes(doc.id, &certs, a.opt_bool("full_control")?.unwrap_or(false)).map_err(failed)?;
+        write_atomic(&target, &bytes)?;
+        Ok(json!({"path":target.to_string_lossy(),"bytes":bytes.len(),"recipients":certs.len(),"algorithm":"AES-256","original_unchanged":true}))
     }
 
     fn insert_blank(&mut self, a: &Args) -> Result<Value> {
@@ -1762,6 +1804,17 @@ fn extract_parallel(bytes: &Arc<Vec<u8>>, password: Option<Arc<str>>, pages: &[u
 }
 
 /// Write via a temporary file in the same directory, then rename over the target.
+fn read_certificate_file(path: &Path, max: u64) -> Result<Vec<u8>> {
+    use std::io::Read;
+    let f = std::fs::File::open(path).map_err(failed)?;
+    let mut data = Vec::new();
+    f.take(max + 1).read_to_end(&mut data).map_err(failed)?;
+    if data.len() as u64 > max {
+        return Err(failed("certificate file is too large"));
+    }
+    Ok(data)
+}
+
 fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
     let dir = path.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new("."));
     let name = path.file_name().ok_or_else(|| failed(format!("{}: not a file path", path.display())))?;
