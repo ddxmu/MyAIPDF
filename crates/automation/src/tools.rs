@@ -110,7 +110,7 @@ pub fn tools() -> Vec<ToolDef> {
     vec![
         t("update_check", "检查 MyAIPDF 更新", "Explicit GitHub request for ddxmu/MyAIPDF's latest stable release. No credentials or PDF contents are sent.")
             .ro().cmd("help.check_updates").with(schema(json!({}), &[])),
-        t("update_download", "下载 MyAIPDF 增量更新", "Fetch only the latest stable binary delta matching this exact version from ddxmu/MyAIPDF into a new private directory under out_dir. SHA-256 verified; never falls back to a full package; does not install.")
+        t("update_download", "下载 MyAIPDF 更新", "Fetch the latest stable update from ddxmu/MyAIPDF into a new private directory under out_dir. Prefers an exact-base delta, otherwise a verified full DMG. SHA-256 verified; does not install.")
             .with(schema(json!({"out_dir":path_arg()}), &["out_dir"])),
         t("update_install", "安装 MyAIPDF 更新", "Install a verified package into the exact, closed MyAIPDF.app. Requires confirm:true and no unsaved documents. Preserves the old app backup; honors --root for both paths.")
             .destructive().cmd("help.install_update").with(schema(json!({

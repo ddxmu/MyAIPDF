@@ -103,6 +103,38 @@ mod mac {
     }
 
     #[test]
+    fn full_package_replaces_signed_app_and_keeps_old_app_and_settings() {
+        let f = fixture();
+        let original = snapshot(&f.old).unwrap();
+        let expected = snapshot(&f.new).unwrap();
+        let mount = f.root.join("volume");
+        std::fs::create_dir(&mount).unwrap();
+        std::fs::rename(&f.new, mount.join("MyAIPDF.app")).unwrap();
+        let receipt = crate::macos::activate(&mount, &f.root, &f.old, "0.1.3").unwrap();
+        assert_eq!(snapshot(&f.old).unwrap(), expected);
+        assert_eq!(snapshot(receipt.backup.as_ref().unwrap()).unwrap(), original);
+        assert_eq!(std::fs::read_to_string(f.root.join("personal-settings.txt")).unwrap(), "untouched");
+    }
+
+    #[test]
+    fn full_package_rejects_wrong_version_bad_signature_and_open_target() {
+        let f = fixture();
+        let original = snapshot(&f.old).unwrap();
+        let mount = f.root.join("volume");
+        std::fs::create_dir(&mount).unwrap();
+        let source = mount.join("MyAIPDF.app");
+        std::fs::rename(&f.new, &source).unwrap();
+        assert!(crate::macos::activate(&mount, &f.root, &f.old, "9.9.9").unwrap_err().contains("版本"));
+        let held = std::fs::File::open(f.old.join("Contents/MacOS/MyAIPDF")).unwrap();
+        assert!(crate::macos::activate(&mount, &f.root, &f.old, "0.1.3").unwrap_err().contains("退出全部"));
+        drop(held);
+        std::fs::write(source.join("Contents/Resources/change"), b"corrupt").unwrap();
+        assert!(crate::macos::activate(&mount, &f.root, &f.old, "0.1.3").unwrap_err().contains("codesign"));
+        assert_eq!(snapshot(&f.old).unwrap(), original);
+        assert!(!std::fs::read_dir(&f.root).unwrap().any(|e| e.unwrap().file_name().to_string_lossy().starts_with(".MyAIPDF-staged")));
+    }
+
+    #[test]
     fn altered_base_corrupt_payload_bad_output_and_open_executable_never_replace_app() {
         let f = fixture();
         let original = snapshot(&f.old).unwrap();

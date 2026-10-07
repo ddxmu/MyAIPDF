@@ -63,7 +63,8 @@ fn a_newer_release_is_offered_for_download() {
     h.state_mut().execute("help.check_updates");
     settle(&mut h);
     h.get_by_label_contains("发现 MyAIPDF 新版本 99.0.0");
-    h.get_by_label("下载增量更新");
+    h.get_by_label_contains("更新包：完整安装包");
+    h.get_by_label("下载更新");
     assert!(h.query_by_label("安装并重启").is_none());
     h.get_by_label("关闭").click();
     h.run_steps(3);
@@ -75,7 +76,7 @@ fn an_up_to_date_or_failed_check_says_so() {
     h.state_mut().execute("help.check_updates");
     settle(&mut h);
     h.get_by_label_contains("已是最新版本");
-    assert!(h.query_by_label("下载增量更新").is_none());
+    assert!(h.query_by_label("下载更新").is_none());
     let mut h = harness(Err("测试网络不可用"));
     h.state_mut().execute("help.check_updates");
     settle(&mut h);
@@ -111,7 +112,7 @@ fn about_contains_update_controls_and_confirmed_install() {
     assert_eq!(h.state().dialog, Some(Dialog::About));
     h.get_by_label("检查更新").click();
     settle(&mut h);
-    h.get_by_label("下载增量更新").click();
+    h.get_by_label("下载更新").click();
     settle(&mut h);
     assert_eq!(calls.load(Ordering::SeqCst), 0, "download does not authorize installing");
     h.get_by_label("安装并重启");
@@ -140,7 +141,7 @@ fn unsaved_documents_block_install_without_discarding_edits() {
     h.state_mut().install_update();
     assert_eq!(calls.load(Ordering::SeqCst), 0);
     assert!(h.state().first_dirty().is_some());
-    assert!(h.state().update_status().contains("增量包已下载"));
+    assert!(h.state().update_status().contains("更新包已下载"));
 }
 #[test]
 fn failed_download_can_be_retried() {
@@ -151,6 +152,35 @@ fn failed_download_can_be_retried() {
     h.state_mut().download_update();
     settle(&mut h);
     h.get_by_label_contains("校验失败，未安装");
-    h.get_by_label("下载增量更新");
+    h.get_by_label("下载更新");
+    assert!(h.query_by_label("安装并重启").is_none());
+}
+
+#[test]
+fn a_matching_delta_keeps_the_same_download_and_install_buttons() {
+    let mut h = harness(Ok("v99.0.0"));
+    let mut delta = release("v99.0.0");
+    delta.asset.as_mut().unwrap().url =
+        format!("https://github.com/ddxmu/MyAIPDF/releases/download/v99.0.0/MyAIPDF-99.0.0-from-{APP_VERSION}.delta.dmg");
+    h.state_mut().update_source = Some(Arc::new(move || Ok(delta.clone())));
+    h.state_mut().update_installer = Some(Arc::new(|_| Ok(())));
+    h.state_mut().execute("help.check_updates");
+    settle(&mut h);
+    h.get_by_label_contains("更新包：增量更新包");
+    h.get_by_label("下载更新").click();
+    settle(&mut h);
+    h.get_by_label("安装并重启");
+}
+
+#[test]
+fn a_missing_package_is_not_presented_as_installable() {
+    let mut h = harness(Ok("v99.0.0"));
+    let mut missing = release("v99.0.0");
+    missing.asset = None;
+    h.state_mut().update_source = Some(Arc::new(move || Ok(missing.clone())));
+    h.state_mut().execute("help.check_updates");
+    settle(&mut h);
+    h.get_by_label_contains("暂不能安装");
+    assert!(h.query_by_label("下载更新").is_none());
     assert!(h.query_by_label("安装并重启").is_none());
 }

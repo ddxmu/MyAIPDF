@@ -72,6 +72,8 @@ Read this before choosing work. The feature table above counts what exists; this
 
 ## Where we're lacking and where we're going
 
+MyAIPDF fork, 2026-10-08 (0.1.4): restore the legacy full-DMG path that 0.1.1/0.1.2 clients require, while retaining exact-base delta compatibility for 0.1.3. The new client shows package type and explicit download/install controls; either format is verified, staged and recoverably swapped with saved-document guards. Per the user's revised request, ship a full installer as well as the 0.1.3 delta. This supersedes the 0.1.3 delta-only policy below; no startup network requests or new PDF capability claims.
+
 MyAIPDF fork, 2026-10-07 (0.1.3): AI configuration is a separate, framed modal; chat and composer remain in the sidebar. Defaults are unconfigured, and only the known QA fixture settings are removed. Manual updates now select exact-base binary deltas, verify complete base/payload/result inventories and the reconstructed signature, then preserve the prior application in a recoverable swap. No full-package fallback or startup network requests. Old 0.1.2 uses the signed standalone delta installer for the one-time transition.
 
 The same fork release adds conservative watermark analysis, explicit selection/confirmation and stale-state rejection with undo/save/reopen tests. It excludes whole-page scan deletion and does not claim secure redaction. Cloud/stamp/attachment/JavaScript/audit catalogue entries now link to their existing working handlers. New bounded utilities cover transitions, mixed PDF/image/text creation, extracted XLSX, image-slide PPTX, scan contrast/sharpening, two-point distance annotation, explicit vector grayscale, crop marks and hairline widths. Shared Form resources are copy-on-write. Advanced certificate/timestamp, tagging/geospatial/index and PDF/X/UA workflows remain genuinely unimplemented; no blanket M4–M13 parity claim.
@@ -132,6 +134,8 @@ M0 → M1 → M2 → M3 → M4 must happen in order. After M4, M5–M12 can run 
 ## Log
 
 Newest first. One line per session: the date, what moved, and the new overall percentage.
+
+- **2026-10-08 (MyAIPDF 0.1.4):** Fixed the old-client package mismatch behind the missing install entry. Native 777 tests passed (4 ignored), fmt/clippy/assets/layers/parity gates passed; About download/install render checked. Real 0.1.2 full and 0.1.3 delta updaters upgraded private copies to the same signed 0.1.4 app with exact prior-app backups. Full 108,726,875-byte DMG and 2,647,377-byte delta saved under Desktop/MyAIPDF without replacing installed or historical programs. PDF milestone estimates unchanged (≈ 30–35% effort).
 
 - **2026-10-07 (MyAIPDF 0.1.3 publication):** Published the user's fork release `v0.1.3` at source commit `97fd912d7abb92dc7e604e5c515e18d0f211e4cb`. Only the 4,619,753-byte exact-base 0.1.2 binary delta and SHA-256 list are release assets; no new full installer. GitHub digest, anonymous download/signature, latest-release API and the native update-check tool verified. Versioned Desktop delivery status updated; prior builds retained. Publication only, with no feature or upstream estimate change (≈ 30–35% effort).
 

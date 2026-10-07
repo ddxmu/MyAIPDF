@@ -181,7 +181,7 @@ impl PrintCraftApp {
             Download::Running { bytes, total, .. } => {
                 return format!("正在下载更新：{:.1} / {:.1} MB", *bytes as f64 / 1048576.0, *total as f64 / 1048576.0);
             }
-            Download::Ready(_) => return "增量包已下载并通过校验，点击“安装并重启”。".into(),
+            Download::Ready(_) => return "更新包已下载并通过校验，点击“安装并重启”。".into(),
             Download::Error(e) => return format!("更新未完成：{e}"),
             Download::Installing => return "正在退出并安装更新，完成后将重新打开。".into(),
             Download::Idle => {}
@@ -208,7 +208,14 @@ pub(crate) fn controls(app: &mut PrintCraftApp, ui: &mut egui::Ui) {
         && is_newer(&release.version, APP_VERSION)
         && release.asset.is_none()
     {
-        ui.label("没有适配当前版本的增量包，不会下载完整包。请在 GitHub 发布页选择对应基础版本的增量更新。");
+        ui.label("此版本尚无可校验的 Mac 更新包，暂不能安装；请稍后重新检查。");
+    }
+    if let Check::Done(Ok(release)) = &app.updates.check
+        && is_newer(&release.version, APP_VERSION)
+        && let Some(asset) = &release.asset
+    {
+        let kind = if asset.url.ends_with(".delta.dmg") { "增量更新包" } else { "完整安装包" };
+        ui.label(format!("更新包：{kind}（{:.1} MB）。", asset.size as f64 / 1048576.0));
     }
     ui.horizontal(|ui| {
         let checking = matches!(app.updates.check, Check::Idle | Check::Done(_))
@@ -220,7 +227,7 @@ pub(crate) fn controls(app: &mut PrintCraftApp, ui: &mut egui::Ui) {
         if matches!(app.updates.download, Download::Idle | Download::Error(_))
             && newer
             && app.update_downloader.is_some()
-            && widgets::pill_button(ui, "下载增量更新", true).clicked()
+            && widgets::pill_button(ui, "下载更新", true).clicked()
         {
             app.download_update();
         }
@@ -231,7 +238,7 @@ pub(crate) fn controls(app: &mut PrintCraftApp, ui: &mut egui::Ui) {
         }
         ui.hyperlink_to("GitHub 发布页", RELEASES_PAGE);
     });
-    ui.label(egui::RichText::new("仅下载版本匹配的增量包；合成并校验后安装，保留旧程序与个人设置。").small().color(t.text_muted));
+    ui.label(egui::RichText::new("校验后手动安装；保留旧程序备份与个人设置，不丢弃未保存的 PDF。").small().color(t.text_muted));
 }
 
 pub(crate) fn dialog(app: &mut PrintCraftApp, ctx: &egui::Context) {

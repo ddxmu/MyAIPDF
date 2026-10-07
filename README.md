@@ -45,25 +45,25 @@ cargo xtask models
 cargo xtask myaipdf-icon
 cargo xtask assets --write
 CRAFT_FONTS_DIR=/absolute/path/to/craft-fonts cargo build --locked --release -p printcraft -p printcraft-cli -p myaipdf-updater
-bash packaging/macos/myaipdf.sh --app-only
+bash packaging/macos/myaipdf.sh /absolute/path/MyAIPDF.dmg
 cargo build -p xtask --release
 # 增量脚本使用 target/release/xtask；也可通过 MYAIPDF_XTASK 指定已构建的 xtask。
-bash packaging/macos/myaipdf-delta.sh /absolute/base/MyAIPDF.app /absolute/new/MyAIPDF.app /absolute/MyAIPDF-0.1.3-from-0.1.2.delta.dmg
+bash packaging/macos/myaipdf-delta.sh /absolute/base/MyAIPDF.app /absolute/new/MyAIPDF.app /absolute/MyAIPDF-0.1.4-from-0.1.3.delta.dmg
 ```
 
 ## 更新与版本
 
-当前 MyAIPDF 版本 **0.1.3**（底层 PrintCraft 0.2.1）。本版新增水印分析与选择删除，补齐常用灰色工具，重新设计 AI 设置与对话框，并支持版本绑定的二进制增量更新。保留 0.1.2 的中文排版及文字编辑、红紫 DPF 图标。完整改动与限制见 [0.1.3 更新说明](packaging/macos/MyAIPDF-0.1.3-release.md)。
+当前 MyAIPDF 版本 **0.1.4**（底层 PrintCraft 0.2.1）。修复只发布增量包导致 0.1.1／0.1.2 检查到新版却没有安装入口的问题，恢复兼容完整包与精确基础版本增量包的更新流程。保留水印分析与选择删除、常用工具、AI 设置、中文排版及文字编辑、红紫 DPF 图标。见 [0.1.4 更新说明](packaging/macos/MyAIPDF-0.1.4-release.md)；PDF 功能边界仍见 [0.1.3 更新说明](packaging/macos/MyAIPDF-0.1.3-release.md)。
 
 去水印：左侧“水印去除” → 选择分析范围 → “分析水印” → 预览位置并勾选 → “删除所选水印” → 确认 → 手动保存或另存为。默认不勾选任何对象；文档更改后必须重新分析。候选不等于已确认水印，也可能是正文、标题或页眉 Logo。扫描图片内的水印不能独立删除，整页扫描背景不会被当作删除目标；这不是保密涂黑，增量 PDF 仍有旧修订数据。
 
 灰色工具本次补齐页面切换、多个 PDF／图片／文本创建、Excel 文字／表格导出、PPT 页面图片导出、扫描背景增强、距离测量与可保存标注、文字／矢量转灰度、裁切标记、显式细线修复和基础 PDF/A 预检。云形、印章、附件和脚本等入口状态修正。严格标准转换、证书加密、可信时间戳、自动标签等尚无完整实现的工具仍明确标示；“可用”不是 Acrobat 等价或标准认证。
 
-“菜单 → 帮助 → 关于 MyAIPDF”底部点击“检查更新”，只查询 [ddxmu/MyAIPDF 正式版本](https://github.com/ddxmu/MyAIPDF/releases)。有匹配增量包时点击“下载增量更新”，通过 GitHub SHA-256 校验后再点击“安装并重启”。校验完整的基础版本，在私有副本上合成修改文件，再检查每个结果文件和程序签名；通过后以可恢复的替换保留旧程序备份。未变更的字体、OCR 模型等资源复用本地文件。版本或文件不匹配时停止，不下载完整包，也不会直接覆盖正在运行的应用。
+“菜单 → 帮助 → 关于 MyAIPDF”底部点击“检查更新”，只查询 [ddxmu/MyAIPDF 正式版本](https://github.com/ddxmu/MyAIPDF/releases)。点击“下载更新”，通过 GitHub SHA-256 校验后再点击“安装并重启”。显示包类型及大小，优先精确版本的增量包，否则选可校验的完整 `MyAIPDF.dmg`。两种安装均校验应用标识、版本和签名，在副本上准备后可恢复地替换，保留旧程序和个人设置。增量模式还检查完整的基础版本、数据和合成结果；基础文件不匹配时停止，不绕过校验。
 
-从 0.1.2 首次升级：先保存并退出旧程序，打开 `MyAIPDF-0.1.3-from-0.1.2.delta.dmg`，双击“MyAIPDF增量安装”，选择现有 0.1.2 `MyAIPDF.app`。旧更新器不认识增量格式；这个独立助手解决首次过渡。新版本以后用关于页面更新。有未保存 PDF 时不能退出安装；个人设置保留，没有启动时自动检查、遥测或静默更新。
+0.1.1／0.1.2 更新器只识别完整 `MyAIPDF.dmg`，本版以原文件名发布兼容包，重新检查即可显示旧版原有的下载及安装按钮。0.1.3 仍只认识增量格式，因此同时发布 `MyAIPDF-0.1.4-from-0.1.3.delta.dmg`，供其使用原“下载增量更新”入口升级。有未保存 PDF 时不能退出安装；没有启动时自动检查、遥测或静默更新。
 
-发布新版需同步 `crates/update/src/lib.rs` 的 APP_VERSION、macOS 应用及增量助手 Info.plist，运行测试、构建并验证真实旧版副本的增量合成。以 `v版本号` 创建 GitHub Release，只上传 `MyAIPDF-新版本-from-基础版本.delta.dmg` 和校验清单，不上传新的完整 DMG。可为多个基础版本分别生成增量包；客户端只选择当前精确版本的附件。缺少对应附件或 GitHub digest 时禁止自动安装，不回退完整包。二进制差分由仅构建期的 MIT qbsdiff 生成，客户端通过系统 bspatch 合成，不执行包内脚本。源码由每个版本的 tag 留存。
+发布新版需同步 `crates/update/src/lib.rs` 的 APP_VERSION、macOS 应用及增量助手 Info.plist，运行测试、构建并在真实旧版副本上验证两种升级。以 `v版本号` 创建 GitHub Release；完整包必须命名 `MyAIPDF.dmg` 以兼容旧更新器，增量包命名 `MyAIPDF-新版本-from-基础版本.delta.dmg`。上传校验清单，验证 GitHub digest 后才发布；没有 digest 时禁止自动安装。二进制差分由仅构建期的 MIT qbsdiff 生成，客户端通过系统 bspatch 合成，不执行包内脚本。源码由每个版本的 tag 留存；桌面按版本文件夹保留历史产物。
 
 核心 AI 客户端在 `crates/ai`；真实 PDF 操作复用 `crates/automation` 的验证工具；界面在 `crates/ui-egui/src/ai_ui.rs`。不默认监听端口，不默认启用远程控制。
 

@@ -42,17 +42,53 @@ fn answers_are_read_and_only_our_stable_release_is_offered() {
 }
 
 #[test]
-fn deltas_match_the_exact_base_and_never_fall_back_to_full_packages() {
+fn matching_delta_is_preferred_and_full_package_supports_older_clients() {
     let mut value = release_json();
     value["assets"].as_array_mut().unwrap().push(json!({
         "name":"MyAIPDF.dmg","state":"uploaded","size":100,
         "digest":format!("sha256:{}","b".repeat(64)),
         "browser_download_url":format!("{RELEASES_PAGE}/download/v0.1.4/MyAIPDF.dmg")
     }));
-    assert!(parse_release_for(&value.to_string(), APP_VERSION).unwrap().asset.is_some());
-    assert!(parse_release_for(&value.to_string(), "0.1.1").unwrap().asset.is_none());
+    assert!(parse_release_for(&value.to_string(), APP_VERSION).unwrap().asset.unwrap().url.ends_with(".delta.dmg"));
+    for base in ["0.1.1", "0.1.2"] {
+        assert!(parse_release_for(&value.to_string(), base).unwrap().asset.unwrap().url.ends_with("/MyAIPDF.dmg"));
+    }
     value["assets"].as_array_mut().unwrap().remove(0);
+    assert!(parse_release(&value.to_string()).unwrap().asset.unwrap().url.ends_with("/MyAIPDF.dmg"));
+    let duplicate = value["assets"][0].clone();
+    value["assets"].as_array_mut().unwrap().push(duplicate);
+    assert!(parse_release(&value.to_string()).is_err());
+}
+
+#[test]
+fn unmatched_delta_is_not_offered_and_invalid_full_assets_are_rejected() {
+    let mut value = release_json();
+    assert!(parse_release_for(&value.to_string(), "0.0.1").unwrap().asset.is_none());
+    value["assets"][0]["name"] = json!("MyAIPDF.dmg");
+    assert!(parse_release(&value.to_string()).is_err(), "a full filename must have its own canonical URL");
+    value["assets"][0]["browser_download_url"] = json!(format!("{RELEASES_PAGE}/download/v0.1.4/MyAIPDF.dmg"));
+    assert!(parse_release(&value.to_string()).unwrap().asset.is_some());
+    value["assets"][0]["digest"] = Value::Null;
     assert!(parse_release(&value.to_string()).unwrap().asset.is_none());
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn downloads_accept_only_our_full_package_or_this_exact_base_delta() {
+    let mut release = parse_release(&release_json().to_string()).unwrap();
+    assert_eq!(download_filename(&release).unwrap(), delta_filename("0.1.4", APP_VERSION));
+    release.asset.as_mut().unwrap().url = format!("{RELEASES_PAGE}/download/v0.1.4/MyAIPDF.dmg");
+    assert_eq!(download_filename(&release).unwrap(), "MyAIPDF.dmg");
+    for url in [
+        "https://example.com/MyAIPDF.dmg".to_owned(),
+        format!("{RELEASES_PAGE}/download/v0.1.4/{}", delta_filename("0.1.4", "0.0.1")),
+        format!("{RELEASES_PAGE}/download/v0.1.5/MyAIPDF.dmg"),
+    ] {
+        release.asset.as_mut().unwrap().url = url;
+        assert!(download_filename(&release).is_err());
+    }
+    release.version = "0.1.4-../../escape".into();
+    assert!(download_filename(&release).is_err());
 }
 
 #[test]

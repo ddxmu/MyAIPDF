@@ -15,7 +15,7 @@ mod macos;
 #[cfg(test)]
 mod tests;
 
-pub const APP_VERSION: &str = "0.1.3";
+pub const APP_VERSION: &str = "0.1.4";
 pub const REPOSITORY: &str = "https://github.com/ddxmu/MyAIPDF";
 pub const RELEASES_PAGE: &str = "https://github.com/ddxmu/MyAIPDF/releases";
 pub const LATEST_API: &str = "https://api.github.com/repos/ddxmu/MyAIPDF/releases/latest";
@@ -70,7 +70,7 @@ pub fn parse_release(body: &str) -> Result<Release, String> {
     parse_release_for(body, APP_VERSION)
 }
 
-/// Select only a delta built for the caller's exact base; never fall back to a full DMG.
+/// Prefer an exact-base delta; otherwise offer the verified full DMG used by older clients.
 pub fn parse_release_for(body: &str, current: &str) -> Result<Release, String> {
     if body.len() > 1 << 20 {
         return Err("GitHub 发布信息过大".into());
@@ -89,8 +89,9 @@ pub fn parse_release_for(body: &str, current: &str) -> Result<Release, String> {
     }
     let assets = v["assets"].as_array().ok_or("GitHub 未返回安装包列表")?;
     let version = tag.trim_start_matches(['v', 'V']);
-    let filename = delta_filename(version, current);
-    let found: Vec<_> = assets.iter().filter(|a| a["name"].as_str() == Some(filename.as_str())).collect();
+    let delta_name = delta_filename(version, current);
+    let filename = if assets.iter().any(|a| a["name"].as_str() == Some(delta_name.as_str())) { delta_name.as_str() } else { "MyAIPDF.dmg" };
+    let found: Vec<_> = assets.iter().filter(|a| a["name"].as_str() == Some(filename)).collect();
     if found.len() > 1 {
         return Err("GitHub 返回了重复的安装包".into());
     }
@@ -117,6 +118,25 @@ pub fn parse_release_for(body: &str, current: &str) -> Result<Release, String> {
 
 pub fn delta_filename(version: &str, base: &str) -> String {
     format!("MyAIPDF-{version}-from-{base}.delta.dmg")
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn download_filename(release: &Release) -> Result<String, String> {
+    if release.version.len() > 64
+        || parse_version(&release.version).is_none()
+        || !release.version.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b'_'))
+    {
+        return Err("更新版本号无效".into());
+    }
+    let asset = release.asset.as_ref().ok_or("此版本缺少可校验的 Mac 安装包，请查看 GitHub 发布页")?;
+    for filename in [delta_filename(&release.version, APP_VERSION), "MyAIPDF.dmg".into()] {
+        let expected = format!("{RELEASES_PAGE}/download/v{}/{filename}", release.version);
+        let without_v = format!("{RELEASES_PAGE}/download/{}/{filename}", release.version);
+        if asset.url == expected || asset.url == without_v {
+            return Ok(filename);
+        }
+    }
+    Err("安装包地址不属于指定仓库或基础版本不匹配".into())
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -218,12 +238,7 @@ pub fn download(release: &Release, directory: &Path, progress: impl Fn(u64, u64)
     {
         use std::io::Write;
         let asset = release.asset.as_ref().ok_or("此版本缺少可校验的 Mac 安装包，请查看 GitHub 发布页")?;
-        let filename = delta_filename(&release.version, APP_VERSION);
-        let expected = format!("{RELEASES_PAGE}/download/v{}/{filename}", release.version);
-        let expected_without_v = format!("{RELEASES_PAGE}/download/{}/{filename}", release.version);
-        if asset.url != expected && asset.url != expected_without_v {
-            return Err("安装包地址不属于指定仓库".into());
-        }
+        let filename = download_filename(release)?;
         if asset.size == 0 || asset.size > MAX_PACKAGE_BYTES || !valid_digest(&asset.sha256) {
             return Err("安装包校验信息无效".into());
         }

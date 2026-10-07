@@ -74,7 +74,31 @@ pub(super) fn install(package: &Package, application: &Path) -> Result<Installed
     }
 }
 
-fn activate(mount: &Path, _parent: &Path, target: &Path, version: &str) -> Result<Installed, String> {
+pub(super) fn activate(mount: &Path, parent: &Path, target: &Path, version: &str) -> Result<Installed, String> {
+    let source = mount.join("MyAIPDF.app");
+    if std::fs::symlink_metadata(&source).is_ok() {
+        check_bundle(&source, Some(version))?;
+        let nonce = getrandom::u64().map_err(|_| "无法准备应用更新")?;
+        let staged = parent.join(format!(".MyAIPDF-staged-{nonce:016x}.app"));
+        let backup = parent.join(format!(".MyAIPDF-backup-{nonce:016x}.app"));
+        if staged.exists() || backup.exists() {
+            return Err("更新缓存位置已存在，请重试".into());
+        }
+        std::fs::create_dir(&staged).map_err(|_| "应用目录不可写，请手动将安装包中的 MyAIPDF 拖入应用程序")?;
+        let outcome = (|| {
+            run("/usr/bin/ditto", &[source.as_os_str(), staged.as_os_str()])?;
+            check_bundle(&staged, Some(version))?;
+            if target.exists() {
+                check_bundle(target, None)?;
+                closed(target)?;
+            }
+            replace_staged(&staged, target, &backup)
+        })();
+        if outcome.is_err() {
+            let _ = std::fs::remove_dir_all(&staged);
+        }
+        return outcome;
+    }
     let installer = mount.join(super::delta::INSTALLER);
     if property(&installer, "CFBundleIdentifier")? != "local.myaipdf.delta" || property(&installer, "CFBundleShortVersionString")? != version {
         return Err("增量安装助手的标识或版本无效".into());
@@ -86,7 +110,7 @@ fn activate(mount: &Path, _parent: &Path, target: &Path, version: &str) -> Resul
 fn closed(target: &Path) -> Result<(), String> {
     let r = Command::new("/usr/sbin/lsof").arg("-t").arg(target.join("Contents/MacOS/MyAIPDF")).output().map_err(|_| "无法确认旧程序已退出")?;
     if r.status.success() || !r.stdout.is_empty() {
-        return Err("请先保存 PDF 并退出全部 MyAIPDF 窗口，再安装增量更新".into());
+        return Err("请先保存 PDF 并退出全部 MyAIPDF 窗口，再安装更新".into());
     }
     if r.status.code() != Some(1) {
         return Err("无法确认旧程序已退出，未替换应用".into());

@@ -3,6 +3,9 @@
 L4, no GUI dependencies. Explicit checks only, against `ddxmu/MyAIPDF` stable GitHub Releases.
 Downloads are bounded and verified against the release asset's SHA-256 digest; arbitrary
 repositories, download hosts and filenames are rejected. No AI keys or PDF data are sent.
+Exact-base deltas are preferred; otherwise a verified `MyAIPDF.dmg` is selected. Stable
+releases retain that full-package filename for the 0.1.1/0.1.2 updater, and supply an exact
+0.1.3 delta for its delta-only updater. Both package layouts use the same guarded install API.
 
 `check_latest`, `download`, `verify_package` and `install` are shared by the desktop app and
 headless update tools. Installation requires an explicit user action and a closed target app.
