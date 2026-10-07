@@ -30,7 +30,7 @@ pub fn tab_strip(app: &mut PrintCraftApp, ui: &mut egui::Ui) {
                 let mut close = None;
                 for i in 0..app.views.len() {
                     let Some(doc) = app.session.get(app.views[i].id) else { continue };
-                    let (name, dirty) = (doc.display_name(), doc.dirty);
+                    let (name, dirty) = (doc.display_name(), app.view_dirty(i));
                     if tab(ui, &t, &name, dirty, app.active == Some(i), &mut close, i).clicked() {
                         app.active = Some(i);
                     }
@@ -129,6 +129,9 @@ pub fn mode_bar(app: &mut PrintCraftApp, ui: &mut egui::Ui) {
                             Mode::Sign => crate::LeftPanel::Tool("fill_sign"),
                             _ => crate::LeftPanel::AllTools,
                         };
+                        if mode == Mode::Edit && app.active.is_some() {
+                            app.run_command("edit.edit_text");
+                        }
                     }
                 }
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {

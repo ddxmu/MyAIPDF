@@ -226,5 +226,5 @@ fn the_about_dialog_shows_the_running_version() {
     let mut h = harness();
     h.state_mut().execute("help.about");
     h.run_steps(3);
-    h.get_by_label_contains(&format!("中文版 0.1.1 · PrintCraft {}", env!("CARGO_PKG_VERSION")));
+    h.get_by_label_contains(&format!("中文版 {} · PrintCraft {}", printcraft_update::APP_VERSION, env!("CARGO_PKG_VERSION")));
 }

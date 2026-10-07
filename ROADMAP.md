@@ -72,6 +72,8 @@ Read this before choosing work. The feature table above counts what exists; this
 
 ## Where we're lacking and where we're going
 
+MyAIPDF fork, 2026-10-07 (0.1.2): existing paragraph editing now embeds approved Simplified Chinese TrueType subsets when the source font lacks new glyphs, wraps unspaced Chinese and retains explicit newlines. UI regression tests cover Edit entry, saving a pending draft, close protection and failure retaining input. Mixed Chinese/Latin interface baselines and compact line metrics are checked at 1×/2×. Editing remains partial: outlined/scanned text, nested Form text, missing mappings and per-character mixed styling are not solved. No Acrobat-equivalence claim.
+
 The gaps that matter most, in priority order. Agents: prefer these over adding P2/P3 features, and check `parity/acrobat-features.toml` notes for the specifics of each.
 
 1. **Our own renderer (M2).** Replace `hayro` with the `model` crate, our font engine and the DisplayList devices (ADR-0004). It turns the 7 rendering P0 partials into shipped features and removes most vendored patches. The largest single lever.

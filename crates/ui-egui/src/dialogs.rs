@@ -1026,7 +1026,7 @@ pub fn show(app: &mut PrintCraftApp, ctx: &egui::Context) {
                     widgets::myaipdf_mark(ui, 48.0);
                     ui.vertical(|ui| {
                         ui.label(egui::RichText::new(crate::i18n::ui_tr(ui, "MyAIPDF")).font(theme::semibold(20.0)));
-                        ui.label(format!("中文版 0.1.1 · PrintCraft {}", env!("CARGO_PKG_VERSION")));
+                        ui.label(format!("中文版 {} · PrintCraft {}", printcraft_update::APP_VERSION, env!("CARGO_PKG_VERSION")));
                     });
                 });
                 ui.add_space(6.0);

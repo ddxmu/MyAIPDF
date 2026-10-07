@@ -437,6 +437,70 @@ fn paragraphs_are_found_and_rewrapped() {
     assert_eq!((blocks[0].text.as_str(), blocks[0].lines.len()), ("Short.", 1));
 }
 
+#[test]
+fn chinese_cid_text_survives_reopening_and_a_second_edit() {
+    if !printcraft_fonts::CRAFT_FONTS.iter().any(|f| f.covers("Hans")) {
+        return;
+    }
+    let mut doc = text_page("BT /F1 12 Tf 72 700 Td (Original) Tj ET BT /F1 12 Tf 72 550 Td (Keep me) Tj ET");
+    let original_next = text::text_lines(&doc, 0).unwrap()[1].clone();
+    let first = "简体中文字体与字号可以修改 PDF 2026";
+    let result = text::replace_block(&mut doc, 0, 0, first).unwrap();
+    assert!(result.substituted.unwrap().contains("IBMPlexSansSC"));
+    let mut doc = reopen(&doc);
+    assert_eq!(text::text_lines(&doc, 0).unwrap()[0].text, first);
+    assert_eq!(text::text_lines(&doc, 0).unwrap()[1].rect, original_next.rect);
+    assert_eq!(text::text_lines(&doc, 0).unwrap()[1].text, original_next.text);
+    let second = "重新编辑并保存：新增汉字测试";
+    text::rewrite_block(
+        &mut doc,
+        0,
+        0,
+        Some(second),
+        &text::BlockStyle {
+            family: Some((crate::added::Family::Helvetica, true, true)),
+            size: Some(18.0),
+            color: Some([0.8, 0.0, 0.1]),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let doc = reopen(&doc);
+    let lines = text::text_lines(&doc, 0).unwrap();
+    assert_eq!(lines[0].text, second);
+    assert!(lines[0].bold && lines[0].italic && (lines[0].size - 18.0).abs() < 0.01);
+    assert_eq!(lines[0].color, [0.8, 0.0, 0.1]);
+    assert_eq!(lines[1].rect, original_next.rect);
+    assert_eq!(lines[1].text, original_next.text);
+}
+
+#[test]
+fn chinese_over_240_glyphs_wraps_without_losing_characters() {
+    if !printcraft_fonts::CRAFT_FONTS.iter().any(|f| f.covers("Hans")) {
+        return;
+    }
+    let replacement: String = (0x4e00..0x4e00 + 300).filter_map(char::from_u32).collect();
+    let mut doc = text_page("BT /F1 12 Tf 72 700 Td (Original) Tj ET");
+    text::rewrite_block(&mut doc, 0, 0, Some(&replacement), &text::BlockStyle { width: Some(120.0), ..Default::default() }).unwrap();
+    let doc = reopen(&doc);
+    let lines = text::text_lines(&doc, 0).unwrap();
+    assert_eq!(lines.iter().map(|l| l.text.as_str()).collect::<String>(), replacement);
+    assert!(lines.len() > 20);
+    assert!(lines.iter().all(|l| l.rect[2] - l.rect[0] <= 121.0));
+}
+
+#[test]
+fn explicit_line_breaks_are_preserved() {
+    let mut doc = text_page("BT /F1 12 Tf 72 700 Td (Original) Tj ET");
+    text::rewrite_block(&mut doc, 0, 0, Some("first\nsecond\nthird"), &text::BlockStyle { width: Some(80.0), ..Default::default() }).unwrap();
+    let doc = reopen(&doc);
+    let lines = text::text_lines(&doc, 0).unwrap();
+    assert_eq!(lines[0].text, "first");
+    assert_eq!(lines[1].text, "second");
+    assert_eq!(lines[2].text, "third");
+    assert!(lines.iter().all(|l| l.rect[2] - l.rect[0] <= 81.0));
+}
+
 fn page_content_bytes(doc: &Document, page: usize) -> Vec<u8> {
     let p = printcraft_model::pages(doc).swap_remove(page);
     let c = p.dict.get(b"Contents").unwrap();

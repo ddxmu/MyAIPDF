@@ -69,11 +69,14 @@ pub fn show(app: &mut PrintCraftApp, ui: &mut egui::Ui) {
                                 theme::semibold(13.5),
                                 t.text,
                             );
-                            let blurb = g
-                                .sections
-                                .first()
-                                .map(|s| s.items.iter().take(3).map(|i| app.language.tr(i.label)).collect::<Vec<_>>().join(" · "))
-                                .unwrap_or_default();
+                            let blurb = if id == "edit" {
+                                "文字与字号 · 图片 · 保存".to_string()
+                            } else {
+                                g.sections
+                                    .first()
+                                    .map(|s| s.items.iter().take(3).map(|i| app.language.tr(i.label)).collect::<Vec<_>>().join(" · "))
+                                    .unwrap_or_default()
+                            };
                             let galley = ui.fonts_mut(|f| f.layout(blurb, theme::regular(11.5), t.text_muted, rect.width() - 28.0));
                             ui.painter().galley(rect.min + vec2(14.0, 46.0), galley, t.text_muted);
                             ui.painter().text(
@@ -131,15 +134,18 @@ pub fn show(app: &mut PrintCraftApp, ui: &mut egui::Ui) {
                     22.0,
                     egui::Color32::from_rgb(0xE0, 0x3E, 0x3E),
                 );
-                ui.painter().text(rect.min + vec2(46.0, 15.0), Align2::LEFT_CENTER, &r.name, theme::medium(13.5), t.text);
-                ui.painter().text(rect.min + vec2(46.0, 32.0), Align2::LEFT_CENTER, &r.path, theme::regular(11.0), t.text_faint);
-                ui.painter().text(
-                    rect.right_center() - vec2(12.0, 0.0),
-                    Align2::RIGHT_CENTER,
-                    format!("{} 页  ·  {}", r.pages, human_size(r.size)),
-                    theme::regular(12.0),
-                    t.text_muted,
-                );
+                let details = format!("{} 页  ·  {}", r.pages, human_size(r.size));
+                let details_width = ui.fonts_mut(|f| f.layout_no_wrap(details.clone(), theme::regular(12.0), t.text_muted).size().x);
+                let text_width = (rect.width() - 46.0 - details_width - 32.0).max(0.0);
+                for (text, y, font, color) in [(&r.name, 15.0, theme::medium(13.5), t.text), (&r.path, 32.0, theme::regular(11.0), t.text_faint)] {
+                    let mut job = egui::text::LayoutJob::simple(text.clone(), font, color, text_width);
+                    job.wrap.max_rows = 1;
+                    job.wrap.break_anywhere = true;
+                    let galley = ui.fonts_mut(|f| f.layout_job(job));
+                    ui.painter().galley(rect.min + vec2(46.0, y - galley.size().y / 2.0), galley, color);
+                }
+                ui.painter().text(rect.right_center() - vec2(12.0, 0.0), Align2::RIGHT_CENTER, details, theme::regular(12.0), t.text_muted);
+                let resp = resp.on_hover_text(&r.path);
                 if resp.clicked() {
                     open = Some(r.path.clone());
                 }

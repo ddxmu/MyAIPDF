@@ -28,7 +28,12 @@ pub enum SaveTarget {
 impl PrintCraftApp {
     /// Apply an edit to the active document. Returns `true` on success; failures are shown.
     pub fn apply_edit(&mut self, edit: Edit) -> bool {
-        let Some((i, id)) = self.active_ids() else { return false };
+        let Some(i) = self.active else { return false };
+        self.apply_edit_view(i, edit)
+    }
+
+    fn apply_edit_view(&mut self, i: usize, edit: Edit) -> bool {
+        let Some(id) = self.views.get(i).map(|v| v.id) else { return false };
         let label = edit.label();
         match self.session.apply(id, edit.clone()) {
             Ok(()) => {
@@ -82,6 +87,9 @@ impl PrintCraftApp {
 
     fn history_step(&mut self, undo: bool) {
         let Some((i, id)) = self.active_ids() else { return };
+        if !self.commit_text(i) {
+            return;
+        }
         let result = if undo { self.session.undo(id) } else { self.session.redo(id) };
         match result {
             Ok(label) => {
@@ -99,7 +107,10 @@ impl PrintCraftApp {
     pub(crate) fn process_pending_edits(&mut self) {
         let Some(i) = self.active else { return };
         if let Some(edit) = self.views.get_mut(i).and_then(|v| v.pending_edit.take()) {
-            self.apply_edit(edit);
+            let inline = self.views[i].line_editor.as_ref().is_some_and(|ed| ed.edit() == edit);
+            if self.apply_edit(edit) && inline {
+                self.views[i].line_editor = None;
+            }
         }
         match self.views.get_mut(i).and_then(|v| v.pending_action.take()) {
             Some(crate::canvas::ViewAction::InsertFromFile) => self.insert_from_file_dialog(),
@@ -154,6 +165,9 @@ impl PrintCraftApp {
 
     /// Save the document shown in tab `index`. Returns `true` if it was written.
     pub fn save_view(&mut self, index: usize, target: SaveTarget) -> bool {
+        if !self.commit_text(index) {
+            return false;
+        }
         let Some(id) = self.views.get(index).map(|v| v.id) else { return false };
         let Some(doc) = self.session.get(id) else { return false };
         let (name, path) = (doc.name.clone(), doc.path.clone());
@@ -224,7 +238,7 @@ impl PrintCraftApp {
 
     /// Close a tab, asking first if it has unsaved changes.
     pub fn request_close_tab(&mut self, index: usize) {
-        let dirty = self.views.get(index).and_then(|v| self.session.get(v.id)).is_some_and(|d| d.dirty);
+        let dirty = self.view_dirty(index);
         if dirty {
             self.close_request = Some(CloseRequest::Tab(index));
         } else {
@@ -235,7 +249,7 @@ impl PrintCraftApp {
     /// File ▸ Close all: clean documents close at once; each one with unsaved changes asks.
     pub fn close_all(&mut self) {
         for i in (0..self.views.len()).rev() {
-            if !self.session.get(self.views[i].id).is_some_and(|d| d.dirty) {
+            if !self.view_dirty(i) {
                 self.close_tab(i);
             }
         }
@@ -262,7 +276,23 @@ impl PrintCraftApp {
 
     /// The first tab with unsaved changes.
     pub fn first_dirty(&self) -> Option<usize> {
-        self.views.iter().position(|v| self.session.get(v.id).is_some_and(|d| d.dirty))
+        (0..self.views.len()).find(|i| self.view_dirty(*i))
+    }
+
+    pub(crate) fn view_dirty(&self, index: usize) -> bool {
+        self.views.get(index).is_some_and(|v| {
+            self.session.get(v.id).is_some_and(|d| d.dirty) || v.line_editor.as_ref().is_some_and(crate::edit_text_ui::LineEditor::has_changes)
+        })
+    }
+
+    /// Submit a draft before saving or explicitly applying it. Failure leaves it editable.
+    pub(crate) fn commit_text(&mut self, index: usize) -> bool {
+        let Some(ed) = self.views.get(index).and_then(|v| v.line_editor.clone()) else { return true };
+        if ed.has_changes() && !self.apply_edit_view(index, ed.edit()) {
+            return false;
+        }
+        self.views[index].line_editor = None;
+        true
     }
 
     /// Answer the save prompt: `Some(true)` save, `Some(false)` discard, `None` cancel.

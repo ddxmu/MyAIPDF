@@ -57,7 +57,7 @@ fn main() -> ExitCode {
         #[cfg(feature = "mcp")]
         Some("mcp") => mcp(&args[1..]),
         Some("--version") => {
-            println!("MyAIPDF CLI 0.1.1 (PrintCraft {})", env!("CARGO_PKG_VERSION"));
+            println!("MyAIPDF CLI {} (PrintCraft {})", printcraft_update::APP_VERSION, env!("CARGO_PKG_VERSION"));
             println!("Source:  {}", printcraft_engine::links::GITHUB);
             Ok(())
         }

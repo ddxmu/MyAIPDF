@@ -159,6 +159,11 @@ fn tool_detail(app: &mut PrintCraftApp, ui: &mut egui::Ui, t: &Tokens, g: &'stat
     }
     // Edit a PDF shows Format text at the top while text is selected or being added.
     if g.id == "edit" {
+        ui.label(
+            egui::RichText::new("点击“编辑文字与图片”，再点击页面文字框。扫描图像、轮廓文字暂不能直接改原文；本版 OCR 仅支持英文。")
+                .small()
+                .color(t.text_muted),
+        );
         format_section(app, ui, t);
     }
     let mut run = None;
@@ -294,6 +299,11 @@ fn format_section(app: &mut PrintCraftApp, ui: &mut egui::Ui, t: &Tokens) {
         && let Some(ed) = app.views[i].line_editor.clone()
     {
         let mut ed = ed;
+        if let Some(doc) = app.session.get(app.views[i].id)
+            && let Some(block) = doc.text_blocks(ed.page).get(ed.block)
+        {
+            ui.label(egui::RichText::new(format!("PDF 字体：{}", block.base_font)).small().color(t.text_muted));
+        }
         let mut changed = false;
         if let Some(look) = crate::content_ui::format_panel(ui, t, &ed.look) {
             ed.look = look;
@@ -313,6 +323,15 @@ fn format_section(app: &mut PrintCraftApp, ui: &mut egui::Ui, t: &Tokens) {
             app.views[i].line_editor = Some(ed);
         }
         ui.add_space(6.0);
+        ui.horizontal(|ui| {
+            if ui.button("应用修改").clicked() {
+                app.commit_text(i);
+            }
+            if ui.button("取消输入").clicked() {
+                app.views[i].line_editor = None;
+            }
+        });
+        ui.label(egui::RichText::new("⌘S 保存时会自动提交文字修改。原字体缺字时将嵌入替代字体。").small().color(t.text_muted));
         ui.separator();
         return;
     }

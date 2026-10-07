@@ -80,6 +80,14 @@ pub(crate) fn extras_panel(ui: &mut egui::Ui, e: &mut Extras) -> bool {
 }
 
 impl LineEditor {
+    pub fn has_changes(&self) -> bool {
+        self.text != self.original || self.style() != printcraft_engine::BlockStyle::default()
+    }
+
+    pub fn edit(&self) -> Edit {
+        Edit::EditTextBlock { page: self.page, block: self.block, text: self.text.clone(), style: self.style() }
+    }
+
     /// How far the box may grow to the right, when the paragraph is a single line (a multi-line
     /// paragraph rewraps to its own width and the box doesn't grow).
     pub fn growth(&self) -> Option<f32> {
@@ -492,15 +500,13 @@ pub(crate) fn overlay(ctx: &egui::Context, view: &mut DocView, info: &DocInfo) -
         },
     );
     match done {
-        Some(apply) => {
-            let ed = view.line_editor.take()?;
-            let style = ed.style();
-            (apply && (ed.text != ed.original || style != printcraft_engine::BlockStyle::default())).then_some(Edit::EditTextBlock {
-                page: ed.page,
-                block: ed.block,
-                text: ed.text,
-                style,
-            })
+        Some(true) if view.line_editor.as_ref().is_some_and(LineEditor::has_changes) => {
+            // Keep the draft until the engine accepts it. A missing glyph must not erase input.
+            view.line_editor.as_ref().map(LineEditor::edit)
+        }
+        Some(_) => {
+            view.line_editor = None;
+            None
         }
         None => None,
     }

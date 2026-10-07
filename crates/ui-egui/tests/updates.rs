@@ -49,7 +49,8 @@ fn settle(h: &mut Harness<'static, PrintCraftApp>) {
 
 #[test]
 fn versions_compare_by_number() {
-    assert!(is_newer("v0.1.2", APP_VERSION));
+    assert!(is_newer("v0.1.2", "0.1.1"));
+    assert!(!is_newer(APP_VERSION, APP_VERSION));
     assert!(is_newer("v0.1.10", "0.1.9"));
     assert!(is_newer("1", "0.9.9"));
     for v in ["v0.1.1", "v0.1.0", "v0.1.1-beta.2", "nightly", "v1.2.3.4", "v99999999999999999999.0.0"] {

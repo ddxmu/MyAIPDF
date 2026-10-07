@@ -18,6 +18,7 @@ serde_json = { workspace = true }
 printcraft-engine = { workspace = true }
 printcraft-cos = { workspace = true }
 printcraft-automation = { workspace = true }
+printcraft-update = { workspace = true }
 base64 = "0.22"
 
 [features]

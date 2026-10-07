@@ -355,7 +355,7 @@ fn interpret(doc: &Document, ops: &[Op], fonts_res: &Dict, cache: &mut HashMap<V
                 let rect = corners
                     .iter()
                     .fold([f64::MAX, f64::MAX, f64::MIN, f64::MIN], |b, p| [b[0].min(p.0), b[1].min(p.1), b[2].max(p.0), b[3].max(p.1)]);
-                let size_user = (trm0.0[2].powi(2) + trm0.0[3].powi(2)).sqrt() * ts.size;
+                let size_user = vertical_scale(trm0.0) * ts.size;
                 out.push(Shown {
                     op: i,
                     tm: Matrix([tm.0[0], tm.0[1], tm.0[2], tm.0[3], tm.0[4] - x_text * tm.0[0], tm.0[5] - x_text * tm.0[1]]),
@@ -431,7 +431,7 @@ pub fn text_lines(doc: &Document, page: usize) -> Result<Vec<TextLine>, EditErro
                     origin: Origin {
                         tm: s.tm.0,
                         tlm: s.tlm.0,
-                        k: (s.tm.then(&s.state.ctm).0[2].powi(2) + s.tm.then(&s.state.ctm).0[3].powi(2)).sqrt(),
+                        k: vertical_scale(s.tm.then(&s.state.ctm).0),
                         ctm: s.state.ctm.0,
                         baseline: s.baseline,
                         x: s.start_x,
@@ -458,6 +458,12 @@ fn is_win_ansi_char(c: char) -> bool {
 
 fn needs_type3(text: &str) -> bool {
     text.chars().any(|c| !is_win_ansi_char(c))
+}
+
+// Perpendicular height, not the slanted vertical vector's length: italic must not alter size.
+fn vertical_scale(m: [f64; 6]) -> f64 {
+    let x = m[0].hypot(m[1]);
+    if x > 1e-6 { (m[0] * m[3] - m[1] * m[2]).abs() / x } else { m[2].hypot(m[3]) }
 }
 
 fn source_family(base_font: &str) -> crate::added::Family {
@@ -623,7 +629,15 @@ pub fn replace_line(doc: &mut Document, page: usize, line: usize, text: &str) ->
     match reused {
         Some(bytes) => replacement.push(Op::new("Tj", vec![Object::String(PdfString::literal(bytes))])),
         None => {
-            if needs_type3(&text) {
+            if crate::cjk::is_chinese(&text) {
+                let fallback = crate::cjk::CjkFont::embed(doc, &mut fonts_res, &text, target.bold, target.italic)?;
+                let bytes = fallback.encode(&text).ok_or_else(|| EditError::Invalid("Chinese replacement can't be encoded".into()))?;
+                let size = font_size_before(&ops, first).unwrap_or(target.size);
+                replacement.push(Op::new("Tf", vec![Object::name(&fallback.name), printcraft_content::num(size)]));
+                replacement.push(Op::new("Tj", vec![Object::String(PdfString::literal(bytes))]));
+                replacement.push(Op::new("Tf", vec![Object::name(&target.font), printcraft_content::num(size)]));
+                substituted = Some(fallback.label);
+            } else if needs_type3(&text) {
                 let fallback = type3_font(doc, &mut fonts_res, &text)?;
                 let bytes = type3_encode(&fallback, &text)
                     .ok_or_else(|| EditError::Invalid(format!("\"{text}\" can't be shown by the Japanese fallback")))?;
@@ -756,7 +770,9 @@ fn group_blocks(lines: &[TextLine]) -> Vec<TextBlock> {
             gap.get_or_insert(prev.origin.baseline - l.origin.baseline);
             if b.text.ends_with('-') {
                 b.text.pop();
-            } else {
+            } else if !b.text.chars().last().is_some_and(|c| ('\u{3400}'..='\u{9fff}').contains(&c))
+                || !l.text.chars().next().is_some_and(|c| ('\u{3400}'..='\u{9fff}').contains(&c))
+            {
                 b.text.push(' ');
             }
             b.text.push_str(l.text.trim());
@@ -779,20 +795,32 @@ fn group_blocks(lines: &[TextLine]) -> Vec<TextBlock> {
     blocks
 }
 
-/// Greedy word wrapping to `width` with `advance` giving a string's width.
+/// Preserve explicit line breaks and wrap unspaced Chinese; Latin keeps word boundaries.
 fn wrap(text: &str, width: f64, advance: impl Fn(&str) -> f64) -> Vec<String> {
     let mut out = Vec::new();
-    let mut line = String::new();
-    for word in text.split_whitespace() {
-        let candidate = if line.is_empty() { word.to_string() } else { format!("{line} {word}") };
-        if !line.is_empty() && advance(&candidate) > width {
-            out.push(std::mem::take(&mut line));
-            line = word.to_string();
-        } else {
-            line = candidate;
+    for paragraph in text.split('\n') {
+        let mut line = String::new();
+        for word in paragraph.split_whitespace() {
+            let candidate = if line.is_empty() { word.to_string() } else { format!("{line} {word}") };
+            if advance(&candidate) <= width {
+                line = candidate;
+                continue;
+            }
+            if !line.is_empty() {
+                out.push(std::mem::take(&mut line));
+            }
+            if !word.chars().any(|c| ('\u{3400}'..='\u{9fff}').contains(&c)) {
+                line = word.to_string();
+                continue;
+            }
+            for ch in word.chars() {
+                let candidate = format!("{line}{ch}");
+                if !line.is_empty() && advance(&candidate) > width {
+                    out.push(std::mem::take(&mut line));
+                }
+                line.push(ch);
+            }
         }
-    }
-    if !line.is_empty() || out.is_empty() {
         out.push(line);
     }
     out
@@ -841,7 +869,10 @@ pub fn rewrite_block(doc: &mut Document, page: usize, block: usize, text: Option
     let streams = content_streams(doc, &p.dict);
     let (stream_obj, data) = streams.get(first.stream).cloned().ok_or_else(|| EditError::Invalid("the page's content changed".into()))?;
     let ops = parse(&data).ops;
-    let text = text.unwrap_or(&b.text).split_whitespace().collect::<Vec<_>>().join(" ");
+    let text = text.unwrap_or(&b.text).replace("\r\n", "\n").replace('\r', "\n");
+    if text.len() > 1_048_576 {
+        return Err(EditError::Invalid("replacement paragraph is too large".into()));
+    }
     let o = &first.origin;
     let (font_name, old_size) = o.state.font.clone().ok_or_else(|| EditError::Invalid("the paragraph has no font".into()))?;
     let k = o.k.max(1e-6);
@@ -857,10 +888,13 @@ pub fn rewrite_block(doc: &mut Document, page: usize, block: usize, text: Option
     }
     let o_state = ts_state.clone();
     let metrics = fonts_res.get(font_name.as_bytes()).and_then(|f| doc.resolve(f).as_dict().cloned()).map(|d| Metrics::from_dict(doc, &d));
-    let reuse = style.family.is_none() && metrics.as_ref().is_some_and(|m| m.encode(&text).is_some());
-    let type3 = if !reuse && needs_type3(&text) { Some(type3_font(doc, &mut fonts_res, &text)?) } else { None };
+    let encodable: String = text.chars().filter(|c| *c != '\n').collect();
+    let reuse = style.family.is_none() && metrics.as_ref().is_some_and(|m| m.encode(&encodable).is_some());
     // The standard font used when the paragraph's own can't be (chosen, or substituted).
     let (family, bold, italic) = style.family.unwrap_or((source_family(&b.base_font), b.bold, b.italic));
+    let cjk =
+        if !reuse && crate::cjk::is_chinese(&text) { Some(crate::cjk::CjkFont::embed(doc, &mut fonts_res, &text, bold, italic)?) } else { None };
+    let type3 = if !reuse && cjk.is_none() && needs_type3(&encodable) { Some(type3_font(doc, &mut fonts_res, &encodable)?) } else { None };
     let std_width = move |s: &str, size: f64| -> f64 {
         match family {
             crate::added::Family::Courier => s.chars().count() as f64 * 0.6 * size,
@@ -892,6 +926,7 @@ pub fn rewrite_block(doc: &mut Document, page: usize, block: usize, text: Option
                         .sum::<f64>()
                 })
                 .unwrap_or(0.0),
+            _ if let Some(fallback) = &cjk => fallback.width(s) * size + s.chars().count() as f64 * o_state.char_spacing,
             _ if let Some(fallback) = &type3 => {
                 fallback.codes.iter().map(|(ch, _, width)| s.chars().filter(|c| c == ch).count() as f64 * width * size).sum::<f64>()
                     + s.chars().count() as f64 * o_state.char_spacing
@@ -905,16 +940,19 @@ pub fn rewrite_block(doc: &mut Document, page: usize, block: usize, text: Option
     let new_font = !reuse;
     let (show_font, encode): (String, Encoder) = if let Some(m) = metrics.clone().filter(|_| reuse) {
         (font_name.clone(), Box::new(move |s: &str| m.encode(s)))
+    } else if let Some(fallback) = cjk.clone() {
+        substituted = Some(fallback.label.clone());
+        (fallback.name.clone(), Box::new(move |s: &str| fallback.encode(s)))
     } else if let Some(fallback) = type3.clone() {
         let name = fallback.name.clone();
         let encoder = fallback.clone();
         substituted = Some(format!("{} Type3", fallback.family));
         (name, Box::new(move |s: &str| type3_encode(&encoder, s)))
     } else {
-        let win = printcraft_fonts::win_ansi(&text);
+        let win = printcraft_fonts::win_ansi(&encodable);
         let back: String = win.iter().map(|c| char::from_u32(u32::from(*c)).unwrap_or('?')).collect();
         let base = family.base_font(bold, italic);
-        if text.chars().zip(back.chars()).any(|(a, c)| c == '?' && a != '?') {
+        if encodable.chars().zip(back.chars()).any(|(a, c)| c == '?' && a != '?') {
             return Err(EditError::Invalid(format!("\"{text}\" has characters neither {} nor {base} can show", b.base_font)));
         }
         let mut f = Dict::new();
@@ -957,7 +995,14 @@ pub fn rewrite_block(doc: &mut Document, page: usize, block: usize, text: Option
         state.fill = vec![Op::new("rg", vec![n(r), n(g), n(bl)])];
     }
     block_ops.extend(state.ops());
-    block_ops.push(Op::new("Tm", o.tm.iter().map(|v| n(*v)).collect()));
+    let mut tm = o.tm;
+    if new_font {
+        let was_slanted = b.base_font.contains("IBMPlexSansSC") && b.italic;
+        let slant = 0.2126 * (f64::from(cjk.is_some() && italic) - f64::from(was_slanted));
+        tm[2] += slant * tm[0];
+        tm[3] += slant * tm[1];
+    }
+    block_ops.push(Op::new("Tm", tm.iter().map(|v| n(*v)).collect()));
     // Alignment: each line's offset from the left edge, in text space.
     let offset = |line: &str| -> f64 {
         let free = (width - advance(line)).max(0.0) / k;
@@ -968,7 +1013,7 @@ pub fn rewrite_block(doc: &mut Document, page: usize, block: usize, text: Option
         }
     };
     // Justify: word spacing (single-byte code 32 only) so each line but the last fills the width.
-    let single_byte = !reuse || metrics.as_ref().is_some_and(|m| !m.composite);
+    let single_byte = cjk.is_none() && (!reuse || metrics.as_ref().is_some_and(|m| !m.composite));
     let justify = style.align == Some(crate::added::Align::Justify) && single_byte;
     let mut x = 0.0;
     let mut tw_set = 0.0;

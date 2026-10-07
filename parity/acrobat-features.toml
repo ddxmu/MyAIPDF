@@ -1795,7 +1795,7 @@ status = "partial"
 commands = ["edit.edit_text"]
 tools = ["text_lines", "text_paragraphs", "text_edit"]
 evidence = ["crates/edit/src/tests.rs::paragraphs_are_found_and_rewrapped", "crates/edit/src/tests.rs::text_lines_are_found_and_replaced_in_place", "crates/ui-egui/tests/editing.rs::editing_existing_text_in_place", "crates/automation/tests/automation.rs::editing_existing_text_through_tools"]
-notes = "click a paragraph box and retype it in place (font reused or Helvetica substituted, colour and spacing kept, rewrapped); drag a box to move it or its right-edge handle to rewrap it (edit.text-move-resize); per-character formatting changes are next"
+notes = "click a paragraph box and retype it in place; source font reused when possible, otherwise approved Chinese CID TrueType subsets or standard Latin/Japanese fallbacks; save commits pending input and failed edits retain it; Chinese width wrapping and explicit newlines are preserved. MyAIPDF regressions: chinese_cid_text_survives_reopening_and_a_second_edit, chinese_over_240_glyphs_wraps_without_losing_characters, save_commits_an_open_text_draft_and_reopens_it, chinese_existing_text_saves_reopens_and_remains_editable_through_tools. Nested Form/scanned/outlined text and per-character formatting remain unsupported. Dragging moves or rewraps the box (edit.text-move-resize)"
 
 [[feature]]
 id = "edit.text-reflow"

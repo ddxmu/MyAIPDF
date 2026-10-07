@@ -50,7 +50,7 @@ fn main() -> eframe::Result {
     while let Some(a) = args.next() {
         match a.as_str() {
             "--version" => {
-                println!("MyAIPDF 0.1.1 (PrintCraft {})", env!("CARGO_PKG_VERSION"));
+                println!("MyAIPDF {} (PrintCraft {})", printcraft_update::APP_VERSION, env!("CARGO_PKG_VERSION"));
                 return Ok(());
             }
             "--control" => control_file = args.next(),

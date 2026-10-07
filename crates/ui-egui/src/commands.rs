@@ -268,10 +268,18 @@ impl PrintCraftApp {
             "app.preferences" => self.dialog = Some(Dialog::Preferences),
             "ocr.recognize_batch" => self.ocr_files_dialog(),
             "edit.edit_text" => {
+                self.mode = crate::Mode::Edit;
                 self.quick_tool = crate::QuickTool::EditText;
                 self.left = crate::LeftPanel::Tool("edit");
                 self.left_open = true;
-                self.notify("Click text or an image to edit it");
+                let empty = self
+                    .active_ids()
+                    .is_some_and(|(i, id)| self.session.get(id).is_some_and(|doc| doc.text_blocks(self.views[i].current).is_empty()));
+                if empty {
+                    self.notify("当前页没有可直接编辑的文字。扫描图像、轮廓文字或复杂嵌套内容暂不支持原文编辑。");
+                } else {
+                    self.notify("Click text or an image to edit it");
+                }
             }
             "edit.advanced_search" => {
                 if let Some(i) = self.active {

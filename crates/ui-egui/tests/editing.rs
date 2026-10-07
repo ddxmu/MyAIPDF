@@ -727,6 +727,91 @@ fn editing_existing_text_in_place() {
     assert_eq!(texts_of(s, 0), ["Chapter One"], "the page shows it");
 }
 
+fn open_inline(h: &mut Harness<'static, PrintCraftApp>) {
+    h.get_by_label("Edit").click();
+    h.run_steps(2);
+    assert_eq!(h.state().quick_tool, printcraft_ui_egui::QuickTool::EditText);
+    let r = h.state().views[0].page_screen_rect(0).unwrap();
+    let at = egui::pos2(r.left() + 40.0 / 200.0 * r.width(), r.top() + (300.0 - 158.0) / 300.0 * r.height());
+    h.hover_at(at);
+    h.run_steps(1);
+    h.drag_at(at);
+    h.run_steps(1);
+    h.drop_at(at);
+    h.run_steps(3);
+    assert!(h.state().views[0].line_editor.is_some());
+}
+
+#[test]
+fn save_commits_an_open_text_draft_and_reopens_it() {
+    let dest = temp_path("pending-text.pdf");
+    let mut h = harness(1, |_| {});
+    open_inline(&mut h);
+    h.state_mut().views[0].line_editor.as_mut().unwrap().text = "Saved draft".into();
+    h.state_mut().save_override = Some(dest.to_string_lossy().into_owned());
+    h.key_press_modifiers(Modifiers::COMMAND, Key::S);
+    h.run_steps(4);
+    assert!(h.state().views[0].line_editor.is_none());
+    assert!(!dirty(&h));
+    assert_eq!(page_texts(h.state()), ["Saved draft"]);
+    let mut reopened = PrintCraftApp::new();
+    reopened.open_bytes("saved.pdf", None, std::fs::read(dest).unwrap()).unwrap();
+    assert_eq!(page_texts(&reopened), ["Saved draft"]);
+}
+
+#[test]
+fn closing_a_pending_draft_asks_before_discarding() {
+    let mut h = harness(1, |_| {});
+    open_inline(&mut h);
+    h.state_mut().views[0].line_editor.as_mut().unwrap().text = "Unsaved draft".into();
+    assert!(!dirty(&h), "not yet submitted to the document");
+    assert_eq!(h.state().first_dirty(), Some(0));
+    h.state_mut().request_close_tab(0);
+    assert_eq!(h.state().close_request, Some(CloseRequest::Tab(0)));
+    assert_eq!(h.state().views.len(), 1);
+}
+
+#[test]
+fn unsupported_glyph_does_not_erase_the_draft_or_overwrite_a_file() {
+    if !printcraft_fonts::CRAFT_FONTS.iter().any(|f| f.covers("Hans")) {
+        return;
+    }
+    let dest = temp_path("rejected-text.pdf");
+    std::fs::write(&dest, b"untouched destination").unwrap();
+    let mut h = harness(1, |_| {});
+    open_inline(&mut h);
+    let text = "中文\u{1f984}";
+    h.state_mut().views[0].line_editor.as_mut().unwrap().text = text.into();
+    h.key_press_modifiers(Modifiers::COMMAND, Key::Enter);
+    h.run_steps(3);
+    assert_eq!(h.state().views[0].line_editor.as_ref().unwrap().text, text);
+    h.state_mut().save_override = Some(dest.to_string_lossy().into_owned());
+    assert!(!h.state_mut().save_active(printcraft_ui_egui::SaveTarget::InPlace));
+    assert_eq!(std::fs::read(dest).unwrap(), b"untouched destination");
+    assert_eq!(page_texts(h.state()), ["Page 1"]);
+}
+
+#[test]
+fn chinese_text_and_font_size_save_from_the_inline_editor() {
+    if !printcraft_fonts::CRAFT_FONTS.iter().any(|f| f.covers("Hans")) {
+        return;
+    }
+    let dest = temp_path("chinese-draft.pdf");
+    let mut h = harness(1, |_| {});
+    open_inline(&mut h);
+    let ed = h.state_mut().views[0].line_editor.as_mut().unwrap();
+    ed.text = "简体中文编辑 PDF".into();
+    ed.look.size = 14.0;
+    ed.look.bold = true;
+    h.state_mut().save_override = Some(dest.to_string_lossy().into_owned());
+    assert!(h.state_mut().save_active(printcraft_ui_egui::SaveTarget::InPlace));
+    let doc = h.state().session.get(h.state().views[0].id).unwrap();
+    let lines = doc.text_lines(0);
+    assert_eq!(lines.iter().map(|l| l.text.as_str()).collect::<String>(), "简体中文编辑 PDF");
+    assert!(lines.iter().all(|l| l.bold && (l.size - 14.0).abs() < 0.01));
+    assert_eq!(page_texts(h.state()).join("").replace('\n', ""), "简体中文编辑 PDF");
+}
+
 /// One page whose only line is drawn twice at the same spot (fake bold, as many generated
 /// documents do).
 fn double_drawn() -> Vec<u8> {

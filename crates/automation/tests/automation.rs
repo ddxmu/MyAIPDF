@@ -741,6 +741,28 @@ fn editing_existing_text_through_tools() {
 }
 
 #[test]
+fn chinese_existing_text_saves_reopens_and_remains_editable_through_tools() {
+    if !printcraft_fonts::CRAFT_FONTS.iter().any(|f| f.covers("Hans")) {
+        return;
+    }
+    let dir = workdir("chinese-existing-text");
+    let mut a = auto(&dir);
+    let doc = ok(&mut a, "doc_open", json!({"path":"a.pdf"}))["doc"].as_u64().unwrap();
+    ok(&mut a, "text_edit", json!({"doc":doc,"page":1,"paragraph":1,"text":"中文 PDF 保存","size":12,"font":"helvetica","bold":true}));
+    ok(&mut a, "doc_save", json!({"doc":doc,"path":"edited.pdf"}));
+    let reopened = ok(&mut a, "doc_open", json!({"path":"edited.pdf"}))["doc"].as_u64().unwrap();
+    assert_eq!(page_text(&mut a, reopened)[0], "中文 PDF 保存");
+    let lines = ok(&mut a, "text_lines", json!({"doc":reopened,"page":1}));
+    assert!(lines["lines"][0]["font"].as_str().unwrap().contains("SemiBold"));
+    assert_eq!(lines["lines"][0]["size"], 12.0);
+    ok(&mut a, "text_edit", json!({"doc":reopened,"page":1,"paragraph":1,"text":"重新编辑汉字","size":14}));
+    ok(&mut a, "doc_save", json!({"doc":reopened,"path":"edited-again.pdf"}));
+    let again = ok(&mut a, "doc_open", json!({"path":"edited-again.pdf"}))["doc"].as_u64().unwrap();
+    assert_eq!(page_text(&mut a, again)[0], "重新编辑汉字");
+    assert_eq!(page_text(&mut a, again)[1..], ["Page 2", "Page 3"]);
+}
+
+#[test]
 fn editing_page_images_through_tools() {
     let dir = workdir("page-images");
     let mut a = auto(&dir);

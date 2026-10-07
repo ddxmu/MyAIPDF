@@ -87,3 +87,24 @@ fn chinese_ui_uses_weight_matched_sans_fonts() {
     let mut view = fonts.with_pixels_per_point(2.0);
     assert!(view.layout_no_wrap("中文黑体".into(), theme::regular(17.0), Color32::BLACK).size().y < 30.0);
 }
+
+#[test]
+fn mixed_chinese_latin_labels_share_a_baseline() {
+    if !printcraft_fonts::CRAFT_FONTS.iter().any(|f| f.covers("Hans")) {
+        return;
+    }
+    let mut fonts = Fonts::new(TextOptions::default(), theme::font_definitions());
+    for scale in [1.0, 2.0] {
+        for size in [11.0, 13.0, 17.0, 24.0] {
+            for id in [theme::regular(size), theme::medium(size), theme::semibold(size)] {
+                let galley =
+                    fonts.with_pixels_per_point(scale).layout_no_wrap("欢迎使用 MyAIPDF 0.1.2 · AI 助手 PDF".into(), id.clone(), Color32::BLACK);
+                let glyphs = &galley.rows[0].glyphs;
+                let baseline = glyphs[0].pos.y;
+                for g in glyphs {
+                    assert!((g.pos.y - baseline).abs() < 0.01, "{id:?} {scale}x {}: {} vs {baseline}", g.chr, g.pos.y);
+                }
+            }
+        }
+    }
+}

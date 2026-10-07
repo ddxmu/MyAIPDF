@@ -108,9 +108,8 @@ pub fn install_fonts(ctx: &egui::Context) {
     ctx.set_fonts(font_definitions());
 }
 
-/// The interface fonts: Inter (and JetBrains Mono for code) first, then egui's defaults, then
-/// weight-matched Chinese sans faces and the Japanese faces of the optional craft-fonts build
-/// input (BIZ UDPGothic first). Without craft-fonts there is no CJK face.
+/// Use one weight-matched face for both Chinese and Latin UI text, so a mixed label shares
+/// its baseline. Inter remains the primary without craft-fonts; code stays monospaced.
 pub fn font_definitions() -> FontDefinitions {
     let mut fonts = FontDefinitions::default();
     let add = |fonts: &mut FontDefinitions, name: &str, bytes: &'static [u8]| {
@@ -124,20 +123,29 @@ pub fn font_definitions() -> FontDefinitions {
     fonts.families.entry(FontFamily::Monospace).or_default().insert(0, "JetBrainsMono".to_owned());
     // Share the document font bytes; do not copy or discover proprietary system fonts.
     for face in printcraft_fonts::CRAFT_FONTS.iter().filter(|f| f.covers("Hans")) {
-        add(&mut fonts, &face.name(), face.bytes);
+        let data = printcraft_fonts::chinese_ui_font(face.bytes).map_or_else(|| FontData::from_static(face.bytes), FontData::from_owned);
+        fonts.font_data.insert(face.name(), Arc::new(data));
     }
     for face in printcraft_fonts::CRAFT_FONTS.iter().filter(|f| f.covers("Hans") && f.style == "Regular").chain(printcraft_fonts::ui_japanese_fonts())
     {
         let name = face.name();
-        add(&mut fonts, &name, face.bytes);
+        if !fonts.font_data.contains_key(&name) {
+            add(&mut fonts, &name, face.bytes);
+        }
         for family in [FontFamily::Proportional, FontFamily::Monospace] {
             fonts.families.entry(family).or_default().push(name.clone());
         }
     }
+    if let Some(face) = printcraft_fonts::CRAFT_FONTS.iter().find(|f| f.covers("Hans") && f.style == "Regular") {
+        let stack = fonts.families.entry(FontFamily::Proportional).or_default();
+        stack.retain(|name| *name != face.name());
+        stack.insert(0, face.name());
+    }
     let fallback: Vec<String> = fonts.families[&FontFamily::Proportional].clone();
     for (fam, primary, chinese_style) in [("medium", "Inter-Medium", "Medium"), ("semibold", "Inter-SemiBold", "SemiBold")] {
-        let mut stack = vec![primary.to_owned()];
-        stack.extend(printcraft_fonts::CRAFT_FONTS.iter().filter(|f| f.covers("Hans") && f.style == chinese_style).map(|f| f.name()));
+        let mut stack: Vec<_> =
+            printcraft_fonts::CRAFT_FONTS.iter().filter(|f| f.covers("Hans") && f.style == chinese_style).map(|f| f.name()).collect();
+        stack.push(primary.to_owned());
         stack.extend(fallback.iter().cloned());
         fonts.families.insert(FontFamily::Name(fam.into()), stack);
     }
