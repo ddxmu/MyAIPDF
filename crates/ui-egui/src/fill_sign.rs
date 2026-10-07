@@ -288,7 +288,7 @@ pub(crate) fn type_box(ctx: &egui::Context, view: &mut DocView, info: &DocInfo, 
                 .desired_width(width)
                 .background_color(Color32::from_rgba_unmultiplied(255, 255, 255, 230))
                 .text_color(Color32::BLACK)
-                .hint_text("Type text")
+                .hint_text(crate::i18n::ui_tr(ui, "Type text"))
                 .id_salt("fill-text-edit"),
         );
         if t.focus {
@@ -375,7 +375,7 @@ fn pad_buttons(ui: &mut egui::Ui, d: &mut SigDraft) -> (bool, bool) {
     ui.add_space(10.0);
     let (mut apply, mut cancel) = (false, false);
     ui.horizontal(|ui| {
-        if ui.button("Clear").clicked() {
+        if ui.button(crate::i18n::ui_tr(ui, "Clear")).clicked() {
             d.strokes.clear();
             d.text.clear();
         }

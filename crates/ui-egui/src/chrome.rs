@@ -39,7 +39,7 @@ pub fn tab_strip(app: &mut PrintCraftApp, ui: &mut egui::Ui) {
                     app.request_close_tab(i);
                 }
                 ui.add_space(4.0);
-                if widgets::ghost_button(ui, "plus", "Open").on_hover_text("Open a PDF (⌘O)").clicked() {
+                if widgets::ghost_button(ui, "plus", "Open").on_hover_text(crate::i18n::ui_tr(ui, "Open a PDF (⌘O)")).clicked() {
                     app.open_dialog();
                 }
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -55,8 +55,10 @@ pub fn tab_strip(app: &mut PrintCraftApp, ui: &mut egui::Ui) {
                         app.dialog = Some(Dialog::Shortcuts);
                     }
                     // One click to the community, from anywhere in the app.
-                    if widgets::ghost_button(ui, "messages-square", "Discord").on_hover_text(printcraft_engine::links::DISCORD).clicked() {
-                        app.execute("help.discord");
+                    if widgets::ghost_button(ui, "sparkles", "AI 助手").clicked() {
+                        app.left = crate::LeftPanel::Tool("ai");
+                        app.left_open = true;
+                        app.mode = Mode::AllTools;
                     }
                 });
             });
@@ -164,7 +166,7 @@ fn main_menu(app: &mut PrintCraftApp, ui: &mut egui::Ui) {
         ui.menu_button(language.tr("View"), |ui| {
             if let Some(i) = app.active {
                 let v = &mut app.views[i];
-                ui.label(egui::RichText::new("Zoom").color(t.text_faint).small());
+                ui.label(egui::RichText::new(crate::i18n::ui_tr(ui, "Zoom")).color(t.text_faint).small());
                 if widgets::menu_item(ui, language.tr("Actual size"), "⌘1").clicked() {
                     v.set_zoom(1.0);
                 }
@@ -196,15 +198,15 @@ fn main_menu(app: &mut PrintCraftApp, ui: &mut egui::Ui) {
                     v.rotate_view(false);
                 }
                 ui.separator();
-                ui.label(egui::RichText::new("Page navigation").color(t.text_faint).small());
-                if ui.add_enabled(!v.back.is_empty(), egui::Button::new("Previous view").shortcut_text("⌘[")).clicked() {
+                ui.label(egui::RichText::new(crate::i18n::ui_tr(ui, "Page navigation")).color(t.text_faint).small());
+                if ui.add_enabled(!v.back.is_empty(), egui::Button::new(crate::i18n::ui_tr(ui, "Previous view")).shortcut_text("⌘[")).clicked() {
                     v.view_history(false);
                 }
-                if ui.add_enabled(!v.forward.is_empty(), egui::Button::new("Next view").shortcut_text("⌘]")).clicked() {
+                if ui.add_enabled(!v.forward.is_empty(), egui::Button::new(crate::i18n::ui_tr(ui, "Next view")).shortcut_text("⌘]")).clicked() {
                     v.view_history(true);
                 }
                 ui.separator();
-                ui.label(egui::RichText::new("Page display").color(t.text_faint).small());
+                ui.label(egui::RichText::new(crate::i18n::ui_tr(ui, "Page display")).color(t.text_faint).small());
                 for (l, label) in
                     [(PageLayout::Continuous, "Continuous scrolling"), (PageLayout::TwoUp, "Two-page view"), (PageLayout::Single, "Single page")]
                 {
@@ -338,7 +340,7 @@ pub fn right_rail(app: &mut PrintCraftApp, ui: &mut egui::Ui) {
                     .corner_radius(CornerRadius::same(5))
                     .show(ui, |ui| ui.add(edit))
                     .inner
-                    .on_hover_text("Current page — type a page number or label (such as iv) and press Enter");
+                    .on_hover_text(crate::i18n::ui_tr(ui, "Current page — type a page number or label (such as iv) and press Enter"));
                 if r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                     // A page label first (logical page numbers, as Acrobat), then a number.
                     let typed = view.page_input.clone();

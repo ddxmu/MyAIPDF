@@ -56,3 +56,34 @@ fn ui_fonts_work_without_craft_fonts() {
     let ctx = egui::Context::default();
     theme::install_fonts(&ctx);
 }
+
+#[test]
+fn chinese_ui_uses_weight_matched_sans_fonts() {
+    if !printcraft_fonts::CRAFT_FONTS.iter().any(|f| f.family == "IBM Plex Sans SC") {
+        eprintln!("skipping chinese_ui_uses_weight_matched_sans_fonts: build with MyAIPDF craft-fonts");
+        return;
+    }
+    let defs = theme::font_definitions();
+    for (family, style) in [
+        (FontFamily::Proportional, "Regular"),
+        (FontFamily::Monospace, "Regular"),
+        (FontFamily::Name("medium".into()), "Medium"),
+        (FontFamily::Name("semibold".into()), "SemiBold"),
+    ] {
+        let first_chinese =
+            defs.families[&family].iter().find(|name| printcraft_fonts::CRAFT_FONTS.iter().any(|face| face.name() == **name && face.covers("Hans")));
+        assert_eq!(first_chinese.map(String::as_str), Some(format!("IBM Plex Sans SC {style}").as_str()));
+    }
+    let mut fonts = Fonts::new(TextOptions::default(), defs);
+    for id in families() {
+        assert!(fonts.has_glyphs(&id, "黑体中文界面：文件、编辑、AI 助手、接口设置、拉取模型、确认执行、撤销。"), "{id:?}");
+        let chinese: String = include_str!("../src/zh.rs")
+            .chars()
+            .chain(include_str!("../src/updates.rs").chars())
+            .filter(|c| ('\u{3400}'..='\u{9fff}').contains(c))
+            .collect();
+        assert!(fonts.has_glyphs(&id, &chinese), "Chinese labels have missing glyphs in {id:?}");
+    }
+    let mut view = fonts.with_pixels_per_point(2.0);
+    assert!(view.layout_no_wrap("中文黑体".into(), theme::regular(17.0), Color32::BLACK).size().y < 30.0);
+}

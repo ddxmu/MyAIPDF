@@ -7,15 +7,17 @@ pub enum Language {
     #[default]
     En,
     Ja,
+    Zh,
 }
 
 impl Language {
-    pub const ALL: [Self; 2] = [Self::En, Self::Ja];
+    pub const ALL: [Self; 3] = [Self::Zh, Self::En, Self::Ja];
 
     pub fn name(self) -> &'static str {
         match self {
             Self::En => "English",
             Self::Ja => "日本語",
+            Self::Zh => "简体中文",
         }
     }
 
@@ -23,11 +25,17 @@ impl Language {
         match code {
             "en" => Some(Self::En),
             "ja" => Some(Self::Ja),
+            "zh" | "zh-cn" | "zh-hans" => Some(Self::Zh),
             _ => None,
         }
     }
 
     pub fn tr(self, text: &str) -> &str {
+        if self == Self::Zh
+            && let Some((_, chinese)) = crate::zh::CHINESE.iter().find(|(english, _)| *english == text)
+        {
+            return chinese;
+        }
         if self == Self::Ja
             && let Some((_, japanese)) = JAPANESE.iter().find(|(english, _)| *english == text)
         {
@@ -35,6 +43,10 @@ impl Language {
         }
         text
     }
+}
+
+pub fn ui_tr<'a>(ui: &egui::Ui, text: &'a str) -> &'a str {
+    ui.ctx().data(|d| d.get_temp::<Language>(egui::Id::new("myaipdf-language"))).unwrap_or_default().tr(text)
 }
 
 const JAPANESE: &[(&str, &str)] = &[

@@ -1,51 +1,16 @@
-//! Help ▸ Check for updates (issue #28): ask for the latest release and offer its download page.
-//!
-//! The desktop app supplies how to ask ([`PrintCraftApp::update_source`]), so this crate has no
-//! network code; without a source (the web build, tests) the command opens the releases page.
-//! PrintCraft never downloads or installs anything itself: the user downloads the new version.
-//! It asks only when the user does: there is no check at start (the owner's decision).
-
+//! Manual check, download and confirmed installation. The desktop supplies native callbacks;
+//! tests use inert substitutes. No startup check, automatic save or document transmission.
 use std::sync::Arc;
 
-use egui::{Align, Layout};
+use crate::{Dialog, PrintCraftApp, theme, widgets};
+pub use printcraft_update::{APP_VERSION, Package, RELEASES_PAGE, Release, is_newer};
 
-use crate::{PrintCraftApp, theme, widgets};
-
-/// Where every PrintCraft release is listed.
-pub const RELEASES_PAGE: &str = "https://github.com/storytold/printcraft/releases";
-
-/// The latest published release.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Release {
-    /// Its version tag, such as `v0.2.0`.
-    pub version: String,
-    /// Its page on [`RELEASES_PAGE`], where the downloads are.
-    pub url: String,
-}
-
-/// Asks for the latest release (blocking; it runs on its own thread).
 pub type UpdateSource = Arc<dyn Fn() -> Result<Release, String> + Send + Sync>;
+pub type Progress = Arc<dyn Fn(u64, u64) + Send + Sync>;
+pub type DownloadSource = Arc<dyn Fn(&Release, Progress) -> Result<Package, String> + Send + Sync>;
+/// Starts a helper which waits for this app to exit before replacing it.
+pub type InstallSource = Arc<dyn Fn(&Package) -> Result<(), String> + Send + Sync>;
 
-/// Whether release `latest` (a tag such as `v0.2.0`) is newer than version `current` (`0.1.1`).
-/// Pre-release and build suffixes are ignored; a version that doesn't parse is never newer.
-pub fn is_newer(latest: &str, current: &str) -> bool {
-    matches!((parse(latest), parse(current)), (Some(l), Some(c)) if l > c)
-}
-
-fn parse(v: &str) -> Option<(u64, u64, u64)> {
-    let v = v.trim().trim_start_matches(['v', 'V']);
-    let core = v.split(['-', '+']).next()?;
-    let mut parts = core.split('.');
-    let mut next = |required: bool| match parts.next() {
-        Some(p) => p.parse::<u64>().ok(),
-        None if required => None,
-        None => Some(0),
-    };
-    let version = (next(true)?, next(false)?, next(false)?);
-    parts.next().is_none().then_some(version)
-}
-
-/// Where a check is.
 #[derive(Default)]
 pub(crate) enum Check {
     #[default]
@@ -55,30 +20,47 @@ pub(crate) enum Check {
     Done(Result<Release, String>),
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+enum Event {
+    Progress(u64, u64),
+    Done(Result<Package, String>),
+}
+
+#[derive(Default)]
+enum Download {
+    #[default]
+    Idle,
+    #[cfg(not(target_arch = "wasm32"))]
+    Running {
+        rx: std::sync::mpsc::Receiver<Event>,
+        bytes: u64,
+        total: u64,
+    },
+    Ready(Package),
+    Error(String),
+    Installing,
+}
+
 #[derive(Default)]
 pub(crate) struct Updates {
     pub(crate) check: Check,
-    /// The Updates dialog is showing.
+    download: Download,
     pub(crate) open: bool,
 }
 
 impl PrintCraftApp {
-    /// Help ▸ Check for updates: ask for the latest release and show the outcome.
     pub fn check_for_updates(&mut self) {
-        let Some(source) = self.update_source.clone() else {
-            self.open_url(RELEASES_PAGE);
-            return;
-        };
+        let Some(source) = self.update_source.clone() else { return };
         #[cfg(not(target_arch = "wasm32"))]
         {
-            self.updates.open = true;
-            if matches!(self.updates.check, Check::Running(_)) {
+            self.updates.open = self.dialog != Some(Dialog::About);
+            if matches!(self.updates.check, Check::Running(_)) || matches!(self.updates.download, Download::Running { .. } | Download::Installing) {
                 return;
             }
+            self.updates.download = Download::Idle;
             let (tx, rx) = std::sync::mpsc::channel();
             let ctx = self.ctx.clone();
             std::thread::spawn(move || {
-                // The receiver may be gone (the app quit): nothing to report to then.
                 let _ = tx.send(source());
                 if let Some(ctx) = ctx {
                     ctx.request_repaint();
@@ -93,87 +75,179 @@ impl PrintCraftApp {
         }
     }
 
-    /// Pick up a finished check (each frame).
+    pub fn download_update(&mut self) {
+        let Some(source) = self.update_downloader.clone() else { return };
+        let Check::Done(Ok(release)) = &self.updates.check else { return };
+        if !is_newer(&release.version, APP_VERSION) || release.asset.is_none() {
+            return;
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            if matches!(self.updates.download, Download::Running { .. } | Download::Installing) {
+                return;
+            }
+            let release = release.clone();
+            let (tx, rx) = std::sync::mpsc::channel();
+            let ctx = self.ctx.clone();
+            std::thread::spawn(move || {
+                let updates = tx.clone();
+                let repaint = ctx.clone();
+                let progress: Progress = Arc::new(move |bytes, total| {
+                    let _ = updates.send(Event::Progress(bytes, total));
+                    if let Some(ctx) = &repaint {
+                        ctx.request_repaint();
+                    }
+                });
+                let _ = tx.send(Event::Done(source(&release, progress)));
+                if let Some(ctx) = ctx {
+                    ctx.request_repaint();
+                }
+            });
+            self.updates.download = Download::Running { rx, bytes: 0, total: 0 };
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            let _ = (source, release);
+        }
+    }
+
+    pub fn install_update(&mut self) {
+        if self.first_dirty().is_some() {
+            self.notify("请先保存或另存为所有未保存的 PDF，再安装更新。");
+            return;
+        }
+        let (Some(install), Download::Ready(package)) = (self.update_installer.clone(), &self.updates.download) else { return };
+        match install(package) {
+            Ok(()) => {
+                self.updates.download = Download::Installing;
+                if let Some(ctx) = &self.ctx {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                }
+            }
+            Err(e) => self.updates.download = Download::Error(e),
+        }
+    }
+
+    pub(crate) fn install_update_enabled(&self) -> bool {
+        self.update_installer.is_some() && matches!(self.updates.download, Download::Ready(_))
+    }
+
     pub(crate) fn poll_updates(&mut self) {
         #[cfg(not(target_arch = "wasm32"))]
-        if let Check::Running(rx) = &self.updates.check {
-            let result = match rx.try_recv() {
-                Ok(r) => r,
-                Err(std::sync::mpsc::TryRecvError::Empty) => return,
-                Err(std::sync::mpsc::TryRecvError::Disconnected) => Err("the update check stopped unexpectedly".into()),
-            };
-            self.updates.check = Check::Done(result);
+        {
+            if let Check::Running(rx) = &self.updates.check {
+                match rx.try_recv() {
+                    Ok(r) => self.updates.check = Check::Done(r),
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => self.updates.check = Check::Done(Err("更新检查意外中断，请重试".into())),
+                    Err(std::sync::mpsc::TryRecvError::Empty) => {}
+                }
+            }
+            let mut completed = None;
+            if let Download::Running { rx, bytes, total } = &mut self.updates.download {
+                for _ in 0..64 {
+                    match rx.try_recv() {
+                        Ok(Event::Progress(n, size)) => {
+                            *bytes = n;
+                            *total = size;
+                        }
+                        Ok(Event::Done(r)) => {
+                            completed = Some(r);
+                            break;
+                        }
+                        Err(std::sync::mpsc::TryRecvError::Empty) => break,
+                        Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                            completed = Some(Err("下载意外中断，请重试".into()));
+                            break;
+                        }
+                    }
+                }
+                if let Some(ctx) = &self.ctx {
+                    ctx.request_repaint_after(std::time::Duration::from_millis(100));
+                }
+            }
+            if let Some(result) = completed {
+                self.updates.download = match result {
+                    Ok(p) => Download::Ready(p),
+                    Err(e) => Download::Error(e),
+                };
+            }
+        }
+    }
+
+    /// Non-secret status for the UI and its opt-in control channel.
+    pub fn update_status(&self) -> String {
+        match &self.updates.download {
+            #[cfg(not(target_arch = "wasm32"))]
+            Download::Running { bytes, total, .. } => {
+                return format!("正在下载更新：{:.1} / {:.1} MB", *bytes as f64 / 1048576.0, *total as f64 / 1048576.0);
+            }
+            Download::Ready(_) => return "安装包已下载并通过校验，点击“安装并重启”。".into(),
+            Download::Error(e) => return format!("更新未完成：{e}"),
+            Download::Installing => return "正在退出并安装更新，完成后将重新打开。".into(),
+            Download::Idle => {}
+        }
+        match &self.updates.check {
+            Check::Idle => "点击“检查更新”从 GitHub 获取最新版本。".into(),
+            #[cfg(not(target_arch = "wasm32"))]
+            Check::Running(_) => "正在检查新版…".into(),
+            Check::Done(Ok(r)) if is_newer(&r.version, APP_VERSION) => format!("发现 MyAIPDF 新版本 {}（当前 {APP_VERSION}）。", r.version),
+            Check::Done(Ok(_)) => format!("MyAIPDF 已是最新版本（{APP_VERSION}）。"),
+            Check::Done(Err(e)) => format!("无法检查更新：{e}"),
         }
     }
 }
 
-/// The Updates dialog.
+/// Shared by Help/About and the separate manual-check dialog.
+pub(crate) fn controls(app: &mut PrintCraftApp, ui: &mut egui::Ui) {
+    let t = theme::Tokens::get(ui.ctx());
+    ui.label(egui::RichText::new(app.update_status()).color(t.text_muted));
+    if app.first_dirty().is_some() {
+        ui.label(egui::RichText::new("安装前请先保存所有未保存的 PDF。").color(t.text_muted).small());
+    }
+    if let Check::Done(Ok(release)) = &app.updates.check
+        && is_newer(&release.version, APP_VERSION)
+        && release.asset.is_none()
+    {
+        ui.label("此版本没有可校验的 Mac 安装包，请打开 GitHub 发布页手动下载。");
+    }
+    ui.horizontal(|ui| {
+        let checking = matches!(app.updates.check, Check::Idle | Check::Done(_))
+            && matches!(app.updates.download, Download::Idle | Download::Ready(_) | Download::Error(_));
+        if ui.add_enabled_ui(checking && app.update_source.is_some(), |ui| widgets::pill_button(ui, "检查更新", false)).inner.clicked() {
+            app.check_for_updates();
+        }
+        let newer = matches!(&app.updates.check, Check::Done(Ok(r)) if is_newer(&r.version, APP_VERSION) && r.asset.is_some());
+        if matches!(app.updates.download, Download::Idle | Download::Error(_))
+            && newer
+            && app.update_downloader.is_some()
+            && widgets::pill_button(ui, "下载安装包", true).clicked()
+        {
+            app.download_update();
+        }
+        if app.install_update_enabled()
+            && ui.add_enabled_ui(app.first_dirty().is_none(), |ui| widgets::pill_button(ui, "安装并重启", true)).inner.clicked()
+        {
+            app.install_update();
+        }
+        ui.hyperlink_to("GitHub 发布页", RELEASES_PAGE);
+    });
+    ui.label(egui::RichText::new("仅手动检查；校验后安装，保留旧程序备份与个人设置。").small().color(t.text_muted));
+}
+
 pub(crate) fn dialog(app: &mut PrintCraftApp, ctx: &egui::Context) {
-    if !app.updates.open {
+    if !app.updates.open || app.dialog == Some(Dialog::About) {
         return;
     }
-    let t = theme::Tokens::get(ctx);
-    let current = env!("CARGO_PKG_VERSION");
     let mut close = false;
-    let mut download: Option<String> = None;
     let modal = egui::Modal::new(egui::Id::new("updates")).show(ctx, |ui| {
-        ui.set_width(420.0);
-        ui.horizontal(|ui| {
-            ui.add(crate::icons::image("cloud", 22.0, t.accent));
-            ui.label(egui::RichText::new("Check for updates").font(theme::semibold(16.0)));
-        });
-        ui.add_space(8.0);
-        match &app.updates.check {
-            Check::Idle => {
-                ui.label("No check has run yet.");
-            }
-            #[cfg(not(target_arch = "wasm32"))]
-            Check::Running(_) => {
-                ui.horizontal(|ui| {
-                    ui.spinner();
-                    ui.label("Checking for a newer version…");
-                });
-            }
-            Check::Done(Ok(r)) if is_newer(&r.version, current) => {
-                let version = r.version.trim_start_matches(['v', 'V']);
-                ui.label(egui::RichText::new(format!("PrintCraft {version} is available.")).strong());
-                ui.label(
-                    egui::RichText::new(format!("You have version {current}. Download the new version from its release page.")).color(t.text_muted),
-                );
-                download = Some(r.url.clone());
-            }
-            Check::Done(Ok(_)) => {
-                ui.label(format!("PrintCraft {current} is up to date."));
-            }
-            Check::Done(Err(e)) => {
-                ui.label(format!("Couldn't check for updates: {e}"));
-                ui.label(egui::RichText::new(format!("You have version {current}. All releases are listed at {RELEASES_PAGE}.")).color(t.text_muted));
-            }
-        }
-        ui.add_space(10.0);
-        ui.label(
-            egui::RichText::new("Asks GitHub for the latest release. Nothing is downloaded or installed automatically.").color(t.text_muted).small(),
-        );
+        ui.set_width(520.0);
+        ui.label(egui::RichText::new("MyAIPDF 软件更新").font(theme::semibold(18.0)));
         ui.add_space(12.0);
-        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            if let Some(url) = download.take() {
-                let get = widgets::pill_button(ui, "Download", true).clicked();
-                let later = widgets::pill_button(ui, "Later", false).clicked();
-                close = get || later;
-                download = get.then_some(url);
-            } else if widgets::pill_button(ui, "Close", true).clicked() {
-                close = true;
-            }
-        });
+        controls(app, ui);
+        ui.add_space(12.0);
+        close = widgets::pill_button(ui, "Close", false).clicked();
     });
-    if modal.should_close() {
-        close = true;
-        download = None;
-    }
-    if close {
+    if close || modal.should_close() {
         app.updates.open = false;
-        if let Some(url) = download {
-            app.open_url(&url);
-        }
     }
 }

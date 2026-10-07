@@ -1,0 +1,14 @@
+[package]
+name = "myaipdf-updater"
+description = "Verified MyAIPDF macOS update helper"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+printcraft-update.workspace = true
+serde_json.workspace = true
+rfd.workspace = true

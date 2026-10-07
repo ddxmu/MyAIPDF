@@ -18,7 +18,7 @@ pub fn left_panel(app: &mut PrintCraftApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
     egui::Panel::left("tool_panel")
         .resizable(false)
-        .exact_size(272.0)
+        .exact_size(if app.left == LeftPanel::Tool("ai") { 390.0 } else { 272.0 })
         .frame(
             egui::Frame::NONE
                 .fill(t.panel)
@@ -28,6 +28,7 @@ pub fn left_panel(app: &mut PrintCraftApp, ui: &mut egui::Ui) {
         .show(ui, |ui| match app.left {
             LeftPanel::AllTools => all_tools(app, ui, &t),
             LeftPanel::Tool(id) => match catalog::group(id) {
+                Some(g) if g.id == "ai" => crate::ai_ui::panel(app, ui),
                 Some(g) => tool_detail(app, ui, &t, g),
                 None => app.left = LeftPanel::AllTools,
             },
@@ -35,6 +36,7 @@ pub fn left_panel(app: &mut PrintCraftApp, ui: &mut egui::Ui) {
 }
 
 fn panel_header(ui: &mut egui::Ui, t: &Tokens, title: &str, back: bool) -> (bool, bool) {
+    let title = crate::i18n::ui_tr(ui, title);
     let mut go_back = false;
     let mut close = false;
     ui.horizontal(|ui| {
@@ -58,30 +60,39 @@ fn all_tools(app: &mut PrintCraftApp, ui: &mut egui::Ui, t: &Tokens) {
         app.left_open = false;
     }
     egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+        if widgets::icon_pill(ui, "sparkles", "AI assistant", true).clicked() {
+            app.left = LeftPanel::Tool("ai");
+        }
+        ui.add_space(8.0);
         let shown = if app.all_tools_expanded { TOOL_GROUPS.len() } else { COLLAPSED_TOOLS.min(TOOL_GROUPS.len()) };
-        for g in &TOOL_GROUPS[..shown] {
+        for g in TOOL_GROUPS.iter().take(shown).filter(|g| g.id != "ai") {
             if tool_row(ui, t, g).clicked() {
                 app.left = LeftPanel::Tool(g.id);
             }
         }
         ui.add_space(4.0);
         let more = if app.all_tools_expanded { "View less" } else { "View more" };
-        if ui.add(egui::Label::new(egui::RichText::new(more).color(t.accent_text).font(theme::medium(13.0))).sense(Sense::click())).clicked() {
+        if ui
+            .add(egui::Label::new(egui::RichText::new(app.language.tr(more)).color(t.accent_text).font(theme::medium(13.0))).sense(Sense::click()))
+            .clicked()
+        {
             app.all_tools_expanded = !app.all_tools_expanded;
         }
     });
 }
 
 fn tool_row(ui: &mut egui::Ui, t: &Tokens, g: &ToolGroup) -> egui::Response {
+    let label = crate::i18n::ui_tr(ui, g.label);
     let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 34.0), Sense::click());
-    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, g.label));
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label));
     if resp.hovered() {
         ui.painter().rect_filled(rect, CornerRadius::same(6), t.hover);
     }
     icons::paint(ui, Rect::from_min_size(rect.min + vec2(6.0, 7.0), vec2(20.0, 20.0)), g.icon, 19.0, hue(g));
-    ui.painter().text(rect.left_center() + vec2(36.0, 0.0), Align2::LEFT_CENTER, g.label, theme::regular(13.5), t.text);
+    ui.painter().text(rect.left_center() + vec2(36.0, 0.0), Align2::LEFT_CENTER, label, theme::regular(13.5), t.text);
     match (g.badge, g.availability) {
         (Some(b), _) => {
+            let b = crate::i18n::ui_tr(ui, b);
             let font = theme::semibold(9.5);
             let w = ui.fonts_mut(|f| f.layout_no_wrap(b.to_string(), font.clone(), Color32::WHITE).size().x);
             let r = Rect::from_center_size(rect.right_center() - vec2(w / 2.0 + 10.0, 0.0), vec2(w + 10.0, 16.0));
@@ -93,7 +104,7 @@ fn tool_row(ui: &mut egui::Ui, t: &Tokens, g: &ToolGroup) -> egui::Response {
             ui.painter().text(
                 rect.right_center() - vec2(10.0, 0.0),
                 Align2::RIGHT_CENTER,
-                format!("Planned · {m}"),
+                format!("规划中 · {m}"),
                 theme::medium(10.5),
                 t.text_faint,
             );
@@ -101,9 +112,9 @@ fn tool_row(ui: &mut egui::Ui, t: &Tokens, g: &ToolGroup) -> egui::Response {
         _ => {}
     }
     let tip = match g.availability {
-        Availability::Ready => "Available".to_string(),
-        Availability::Planned(m) => format!("Planned for milestone {m} — open to see what it will include"),
-        Availability::Provider => "Optional: needs an AI provider you configure".into(),
+        Availability::Ready => crate::i18n::ui_tr(ui, "Available").to_string(),
+        Availability::Planned(m) => format!("上游计划于 {m} 实现，尚未全部可用"),
+        Availability::Provider => "需要配置 AI 接口".into(),
     };
     resp.on_hover_text(tip)
 }
@@ -121,7 +132,7 @@ fn tool_detail(app: &mut PrintCraftApp, ui: &mut egui::Ui, t: &Tokens, g: &'stat
         egui::Frame::NONE.fill(t.accent_soft).corner_radius(CornerRadius::same(8)).inner_margin(egui::Margin::same(10)).show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.label(
-                egui::RichText::new(format!("Coming in milestone {m}. Items marked Ready work today.")).color(t.text).font(theme::regular(12.0)),
+                egui::RichText::new(format!("上游计划于 {m} 实现。标记“可用”的功能已支持，其余尚未实现。")).color(t.text).font(theme::regular(12.0)),
             );
         });
     }
@@ -134,7 +145,10 @@ fn tool_detail(app: &mut PrintCraftApp, ui: &mut egui::Ui, t: &Tokens, g: &'stat
     if g.id == "form" {
         ui.horizontal(|ui| {
             let label = if app.form_preview { "Edit fields" } else { "Preview" };
-            if widgets::pill_button(ui, label, app.form_preview).on_hover_text("Try the form as people filling it in will see it").clicked() {
+            if widgets::pill_button(ui, label, app.form_preview)
+                .on_hover_text(crate::i18n::ui_tr(ui, "Try the form as people filling it in will see it"))
+                .clicked()
+            {
                 app.form_preview = !app.form_preview;
                 if app.form_preview {
                     app.quick_tool = crate::QuickTool::Select;
@@ -156,8 +170,9 @@ fn tool_detail(app: &mut PrintCraftApp, ui: &mut egui::Ui, t: &Tokens, g: &'stat
         for s in g.sections {
             widgets::section_title(ui, s.title);
             for item in s.items {
+                let label = app.language.tr(item.label);
                 let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 34.0), Sense::click());
-                resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, item.label));
+                resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label));
                 let ready = item.availability == Availability::Ready;
                 if resp.hovered() {
                     ui.painter().rect_filled(rect, CornerRadius::same(6), t.hover);
@@ -170,12 +185,13 @@ fn tool_detail(app: &mut PrintCraftApp, ui: &mut egui::Ui, t: &Tokens, g: &'stat
                     17.0,
                     if ready { hue(g) } else { t.text_faint },
                 );
-                ui.painter().text(rect.left_center() + vec2(34.0, 0.0), Align2::LEFT_CENTER, item.label, theme::regular(13.0), fg);
+                ui.painter().text(rect.left_center() + vec2(34.0, 0.0), Align2::LEFT_CENTER, label, theme::regular(13.0), fg);
                 let (chip, fill, cfg) = match item.availability {
                     Availability::Ready => ("Ready", Color32::from_rgb(0xDD, 0xF3, 0xE4), Color32::from_rgb(0x1E, 0x7B, 0x43)),
                     Availability::Planned(m) => (m, t.pressed, t.text_muted),
                     Availability::Provider => ("AI", t.pressed, t.text_muted),
                 };
+                let chip = app.language.tr(chip);
                 let font = theme::semibold(9.5);
                 let w = ui.fonts_mut(|f| f.layout_no_wrap(chip.to_string(), font.clone(), cfg).size().x);
                 let r = Rect::from_center_size(rect.right_center() - vec2(w / 2.0 + 10.0, 0.0), vec2(w + 10.0, 16.0));
@@ -212,7 +228,7 @@ fn tool_detail(app: &mut PrintCraftApp, ui: &mut egui::Ui, t: &Tokens, g: &'stat
 /// page to place it.
 fn stamp_palette(app: &mut PrintCraftApp, ui: &mut egui::Ui, t: &Tokens) {
     use printcraft_engine::{StampGroup, StampKind};
-    ui.label(egui::RichText::new("Choose a stamp, then click on the page to place it.").small().color(t.text_faint));
+    ui.label(egui::RichText::new(crate::i18n::ui_tr(ui, "Choose a stamp, then click on the page to place it.")).small().color(t.text_faint));
     egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
         for (group, title) in
             [(StampGroup::Dynamic, "Dynamic"), (StampGroup::SignHere, "Sign Here"), (StampGroup::StandardBusiness, "Standard Business")]
@@ -796,7 +812,7 @@ fn fields(
     let mut ordered: Vec<_> = info.fields.iter().collect();
     ordered.sort_by_key(|f| (f.page, rank(&f.name)));
     if preparing {
-        ui.label(egui::RichText::new("Tab order: move a field with its arrows.").small().color(t.text_muted));
+        ui.label(egui::RichText::new(crate::i18n::ui_tr(ui, "Tab order: move a field with its arrows.")).small().color(t.text_muted));
     }
     let mut pages: Vec<Option<usize>> = info.fields.iter().map(|f| f.page).collect();
     pages.sort();

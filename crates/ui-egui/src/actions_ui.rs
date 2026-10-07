@@ -181,7 +181,7 @@ pub(crate) fn body(ui: &mut egui::Ui, app: &mut PrintCraftApp, t: &Tokens) -> bo
     if app.wizard.editing.is_some() {
         return edit_body(ui, app, t);
     }
-    ui.label(egui::RichText::new("Action Wizard").font(theme::semibold(18.0)));
+    ui.label(egui::RichText::new(crate::i18n::ui_tr(ui, "Action Wizard")).font(theme::semibold(18.0)));
     ui.add_space(8.0);
     let actions = app.all_actions();
     if app.wizard.selected.as_ref().is_none_or(|s| !actions.iter().any(|a| &a.name == s)) {
@@ -208,7 +208,7 @@ pub(crate) fn body(ui: &mut egui::Ui, app: &mut PrintCraftApp, t: &Tokens) -> bo
                 ui.label(egui::RichText::new(&a.description).color(t.text_muted));
             }
             ui.add_space(6.0);
-            ui.label(egui::RichText::new("Steps").font(theme::semibold(13.0)));
+            ui.label(egui::RichText::new(crate::i18n::ui_tr(ui, "Steps")).font(theme::semibold(13.0)));
             for (i, s) in a.steps.iter().enumerate() {
                 let arg = s.arg().filter(|x| !x.is_empty()).map(|x| format!(": {x}")).unwrap_or_default();
                 ui.label(format!("{}. {}{arg}", i + 1, s.label()));
@@ -219,15 +219,15 @@ pub(crate) fn body(ui: &mut egui::Ui, app: &mut PrintCraftApp, t: &Tokens) -> bo
     let selected_custom = app.wizard.selected.as_ref().and_then(|n| app.custom_actions.iter().position(|a| &a.name == n));
     let mut close = false;
     ui.horizontal(|ui| {
-        if ui.button("New Action…").clicked() {
+        if ui.button(crate::i18n::ui_tr(ui, "New Action…")).clicked() {
             app.wizard.editing = Some((None, Action { name: String::new(), description: String::new(), steps: Vec::new(), builtin: false }));
         }
         if let Some(i) = selected_custom {
-            if ui.button("Edit…").clicked() {
+            if ui.button(crate::i18n::ui_tr(ui, "Edit…")).clicked() {
                 let a = app.custom_actions[i].clone();
                 app.wizard.editing = Some((Some(a.name.clone()), a));
             }
-            if ui.button("Delete").clicked() {
+            if ui.button(crate::i18n::ui_tr(ui, "Delete")).clicked() {
                 app.custom_actions.remove(i);
                 app.wizard.selected = None;
             }
@@ -250,20 +250,20 @@ fn edit_body(ui: &mut egui::Ui, app: &mut PrintCraftApp, t: &Tokens) -> bool {
     ui.label(egui::RichText::new(if original.is_some() { "Edit Action" } else { "New Action" }).font(theme::semibold(18.0)));
     ui.add_space(8.0);
     egui::Grid::new("action-edit").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
-        ui.label("Action name:");
+        ui.label(crate::i18n::ui_tr(ui, "Action name:"));
         ui.add(egui::TextEdit::singleline(&mut a.name).desired_width(320.0).id_salt("action-name"));
         ui.end_row();
-        ui.label("Description:");
+        ui.label(crate::i18n::ui_tr(ui, "Description:"));
         ui.add(egui::TextEdit::singleline(&mut a.description).desired_width(320.0).id_salt("action-description"));
         ui.end_row();
     });
     ui.add_space(6.0);
-    ui.label(egui::RichText::new("Steps").font(theme::semibold(13.0)));
+    ui.label(egui::RichText::new(crate::i18n::ui_tr(ui, "Steps")).font(theme::semibold(13.0)));
     let mut remove = None;
     egui::Frame::new().fill(t.hover).corner_radius(egui::CornerRadius::same(6)).inner_margin(egui::Margin::same(8)).show(ui, |ui| {
         ui.set_width(ui.available_width());
         if a.steps.is_empty() {
-            ui.label(egui::RichText::new("Add the steps this action runs, in order.").color(t.text_muted));
+            ui.label(egui::RichText::new(crate::i18n::ui_tr(ui, "Add the steps this action runs, in order.")).color(t.text_muted));
         }
         for (i, s) in a.steps.iter_mut().enumerate() {
             ui.push_id(i, |ui| {
@@ -273,7 +273,7 @@ fn edit_body(ui: &mut egui::Ui, app: &mut PrintCraftApp, t: &Tokens) -> bool {
                         ui.add(egui::TextEdit::singleline(arg).desired_width(220.0));
                     }
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        if ui.button("Remove").clicked() {
+                        if ui.button(crate::i18n::ui_tr(ui, "Remove")).clicked() {
                             remove = Some(i);
                         }
                     });
@@ -292,7 +292,7 @@ fn edit_body(ui: &mut egui::Ui, app: &mut PrintCraftApp, t: &Tokens) -> bool {
                 ui.selectable_value(add, i, s.label());
             }
         });
-        if ui.button("Add Step").clicked() {
+        if ui.button(crate::i18n::ui_tr(ui, "Add Step")).clicked() {
             a.steps.push(all[(*add).min(all.len() - 1)].clone());
         }
     });
@@ -301,7 +301,7 @@ fn edit_body(ui: &mut egui::Ui, app: &mut PrintCraftApp, t: &Tokens) -> bool {
     let taken =
         builtin().iter().any(|b| b.name == name) || app.custom_actions.iter().any(|c| c.name == name && original.as_deref() != Some(name.as_str()));
     if taken {
-        ui.label(egui::RichText::new("An action with this name already exists.").small().color(t.text_muted));
+        ui.label(egui::RichText::new(crate::i18n::ui_tr(ui, "An action with this name already exists.")).small().color(t.text_muted));
     }
     let (mut done, mut cancel) = (false, false);
     let ok = !name.is_empty() && !taken && !a.steps.is_empty();

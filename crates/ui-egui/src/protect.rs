@@ -93,11 +93,11 @@ fn radio(ui: &mut egui::Ui, t: &Tokens, on: bool, label: &str) -> egui::Response
 pub(crate) fn body(ui: &mut egui::Ui, app: &mut PrintCraftApp, t: &Tokens) -> (bool, bool) {
     use printcraft_engine::Algorithm as A;
     let d = &mut app.protect_draft;
-    ui.label(egui::RichText::new("Protect Using Password").font(theme::semibold(18.0)));
+    ui.label(egui::RichText::new(crate::i18n::ui_tr(ui, "Protect Using Password")).font(theme::semibold(18.0)));
     ui.add_space(4.0);
     ui.separator();
     ui.add_space(6.0);
-    ui.label("Requires user to enter a password for:");
+    ui.label(crate::i18n::ui_tr(ui, "Requires user to enter a password for:"));
     ui.add_space(4.0);
     if radio(ui, t, d.viewing, "Viewing").clicked() {
         d.viewing = true;
@@ -135,7 +135,7 @@ pub(crate) fn body(ui: &mut egui::Ui, app: &mut PrintCraftApp, t: &Tokens) -> (b
     if d.advanced {
         let p = &mut d.protection;
         egui::Grid::new("protect-advanced").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
-            ui.label("Compatibility");
+            ui.label(crate::i18n::ui_tr(ui, "Compatibility"));
             let algos = [
                 (A::Aes256, "Acrobat X and later (256-bit AES)"),
                 (A::Aes128, "Acrobat 7.0 and later (128-bit AES)"),
@@ -149,17 +149,17 @@ pub(crate) fn body(ui: &mut egui::Ui, app: &mut PrintCraftApp, t: &Tokens) -> (b
                 }
             });
             ui.end_row();
-            ui.label("Encrypt");
+            ui.label(crate::i18n::ui_tr(ui, "Encrypt"));
             ui.vertical(|ui| {
-                ui.radio_value(&mut p.encrypt_metadata, true, "All document contents");
+                ui.radio_value(&mut p.encrypt_metadata, true, crate::i18n::ui_tr(ui, "All document contents"));
                 // Unencrypted metadata needs crypt filters (Acrobat 6.0 and later).
                 ui.add_enabled_ui(p.algorithm != A::Rc4_40 && p.algorithm != A::Rc4_128, |ui| {
-                    ui.radio_value(&mut p.encrypt_metadata, false, "All document contents except metadata");
+                    ui.radio_value(&mut p.encrypt_metadata, false, crate::i18n::ui_tr(ui, "All document contents except metadata"));
                 });
             });
             ui.end_row();
             if !d.viewing {
-                ui.label("Printing allowed");
+                ui.label(crate::i18n::ui_tr(ui, "Printing allowed"));
                 let opts = [(Printing::None, "None"), (Printing::Low, "Low Resolution (150 dpi)"), (Printing::High, "High Resolution")];
                 let cur = opts.iter().find(|(o, _)| *o == p.printing).map_or("High Resolution", |(_, l)| *l);
                 egui::ComboBox::from_id_salt("protect-print").width(300.0).selected_text(cur).show_ui(ui, |ui| {
@@ -168,7 +168,7 @@ pub(crate) fn body(ui: &mut egui::Ui, app: &mut PrintCraftApp, t: &Tokens) -> (b
                     }
                 });
                 ui.end_row();
-                ui.label("Changes allowed");
+                ui.label(crate::i18n::ui_tr(ui, "Changes allowed"));
                 let opts = [
                     (Changes::None, "None"),
                     (Changes::Pages, "Inserting, deleting, and rotating pages"),
@@ -183,10 +183,13 @@ pub(crate) fn body(ui: &mut egui::Ui, app: &mut PrintCraftApp, t: &Tokens) -> (b
                     }
                 });
                 ui.end_row();
-                ui.label("");
+                ui.label(crate::i18n::ui_tr(ui, ""));
                 ui.vertical(|ui| {
-                    ui.checkbox(&mut p.copy, "Enable copying of text, images, and other content");
-                    ui.checkbox(&mut p.accessibility, "Enable text access for screen reader devices for the visually impaired");
+                    ui.checkbox(&mut p.copy, crate::i18n::ui_tr(ui, "Enable copying of text, images, and other content"));
+                    ui.checkbox(
+                        &mut p.accessibility,
+                        crate::i18n::ui_tr(ui, "Enable text access for screen reader devices for the visually impaired"),
+                    );
                 });
                 ui.end_row();
             }

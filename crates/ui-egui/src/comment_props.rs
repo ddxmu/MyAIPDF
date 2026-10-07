@@ -147,12 +147,12 @@ pub(crate) fn body(ui: &mut egui::Ui, app: &mut PrintCraftApp, t: &Tokens) -> (b
     match d.tab {
         PropsTab::Appearance => {
             if !e.restylable {
-                ui.label(egui::RichText::new("This comment's appearance can't be changed yet.").color(t.text_muted));
+                ui.label(egui::RichText::new(crate::i18n::ui_tr(ui, "This comment's appearance can't be changed yet.")).color(t.text_muted));
             }
             ui.add_enabled_ui(e.restylable, |ui| {
                 egui::Grid::new("comment-props").num_columns(2).spacing([12.0, 10.0]).show(ui, |ui| {
                     if let Some(icon) = e.icon.as_mut() {
-                        ui.label("Icon");
+                        ui.label(crate::i18n::ui_tr(ui, "Icon"));
                         egui::ComboBox::from_id_salt("note-icon").selected_text(icon.name()).show_ui(ui, |ui| {
                             for i in ICONS {
                                 ui.selectable_value(icon, i, i.name());
@@ -160,19 +160,19 @@ pub(crate) fn body(ui: &mut egui::Ui, app: &mut PrintCraftApp, t: &Tokens) -> (b
                         });
                         ui.end_row();
                     }
-                    ui.label("Colour");
+                    ui.label(crate::i18n::ui_tr(ui, "Colour"));
                     if let Some(c) = swatch_grid(ui, e.color) {
                         e.color = Some(c);
                     }
                     ui.end_row();
-                    ui.label("Opacity");
+                    ui.label(crate::i18n::ui_tr(ui, "Opacity"));
                     let mut pct = e.opacity * 100.0;
                     if ui.add(egui::Slider::new(&mut pct, 0.0..=100.0).suffix("%")).changed() {
                         e.opacity = pct / 100.0;
                     }
                     ui.end_row();
                     if let Some(w) = e.width.as_mut() {
-                        ui.label("Thickness");
+                        ui.label(crate::i18n::ui_tr(ui, "Thickness"));
                         ui.add(egui::Slider::new(w, 0.5..=12.0).step_by(0.5).suffix(" pt"));
                         ui.end_row();
                     }
@@ -181,20 +181,20 @@ pub(crate) fn body(ui: &mut egui::Ui, app: &mut PrintCraftApp, t: &Tokens) -> (b
         }
         PropsTab::General => {
             egui::Grid::new("comment-general").num_columns(2).spacing([12.0, 10.0]).show(ui, |ui| {
-                let l = ui.label("Author");
+                let l = ui.label(crate::i18n::ui_tr(ui, "Author"));
                 ui.add(egui::TextEdit::singleline(&mut e.author).desired_width(280.0)).labelled_by(l.id);
                 ui.end_row();
-                let l = ui.label("Subject");
+                let l = ui.label(crate::i18n::ui_tr(ui, "Subject"));
                 ui.add(egui::TextEdit::singleline(&mut e.subject).desired_width(280.0)).labelled_by(l.id);
                 ui.end_row();
-                ui.label("Modified");
+                ui.label(crate::i18n::ui_tr(ui, "Modified"));
                 ui.label(e.modified.as_deref().map(printcraft_render::pretty_date).unwrap_or_else(|| "—".into()));
                 ui.end_row();
             });
         }
         PropsTab::ReviewHistory => {
             if history.is_empty() {
-                ui.label(egui::RichText::new("No status has been set.").color(t.text_muted));
+                ui.label(egui::RichText::new(crate::i18n::ui_tr(ui, "No status has been set.")).color(t.text_muted));
             }
             for (state, who, when) in &history {
                 ui.label(format!("{state} — {who}  {when}"));
@@ -202,7 +202,7 @@ pub(crate) fn body(ui: &mut egui::Ui, app: &mut PrintCraftApp, t: &Tokens) -> (b
         }
     }
     ui.add_space(12.0);
-    ui.checkbox(&mut d.edited.locked, "Locked");
+    ui.checkbox(&mut d.edited.locked, crate::i18n::ui_tr(ui, "Locked"));
     let (mut apply, mut cancel) = (false, false);
     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
         if widgets::pill_button(ui, "OK", true).clicked() {

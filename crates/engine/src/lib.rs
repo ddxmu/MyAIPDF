@@ -1891,6 +1891,42 @@ impl Session {
         Ok(())
     }
 
+    /// Confirmed AI plans are one undo step. A failed plan restores the original editor,
+    /// including pre-existing undo/redo history, rather than leaving partial edits in redo.
+    pub fn atomic_edits<T>(&mut self, id: DocId, label: &str, run: impl FnOnce(&mut Self) -> Result<T, String>) -> Result<T, String> {
+        let doc = self.get(id).ok_or("document is no longer open")?;
+        let before = doc.editor.clone().ok_or("document is read-only")?;
+        let dirty = doc.dirty;
+        let generation = doc.generation;
+        let result = guard(|| run(self)).and_then(|r| r);
+        let doc = self.doc_mut(id).map_err(|e| e.to_string())?;
+        match result {
+            Ok(value) => {
+                if doc.generation != generation
+                    && let Some(editor) = doc.editor.as_mut()
+                {
+                    editor.undo = before.undo;
+                    editor.undo.push((label.into(), before.cos, before.keys, Scope::Full));
+                    if editor.undo.len() > MAX_UNDO {
+                        editor.undo.remove(0);
+                    }
+                    editor.redo.clear();
+                }
+                Ok(value)
+            }
+            Err(error) => {
+                doc.editor = Some(before);
+                Self::adopt_keys(doc);
+                guard(|| Self::refresh(doc))
+                    .and_then(|r| r.map_err(|e| e.to_string()))
+                    .map_err(|restore| format!("{error}; restore failed: {restore}"))?;
+                doc.dirty = dirty;
+                doc.generation += 1;
+                Err(error)
+            }
+        }
+    }
+
     pub fn undo(&mut self, id: DocId) -> Result<String, EditError> {
         let doc = self.doc_mut(id)?;
         let editor = doc.editor.as_mut().ok_or(EditError::NothingToUndo)?;

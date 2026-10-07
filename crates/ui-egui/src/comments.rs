@@ -1048,13 +1048,18 @@ pub(crate) fn composer(ctx: &egui::Context, view: &mut DocView, info: &DocInfo, 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let can_post = !c.text.trim().is_empty() || matches!(c.kind, ComposerKind::Edit(_));
                     if ui
-                        .add_enabled(can_post, egui::Button::new(egui::RichText::new("Post").color(Color32::WHITE)).fill(t.accent).corner_radius(14))
+                        .add_enabled(
+                            can_post,
+                            egui::Button::new(egui::RichText::new(crate::i18n::ui_tr(ui, "Post")).color(Color32::WHITE))
+                                .fill(t.accent)
+                                .corner_radius(14),
+                        )
                         .clicked()
                         || (enter && can_post)
                     {
                         post = true;
                     }
-                    if ui.add(egui::Button::new("Cancel").corner_radius(14)).clicked() {
+                    if ui.add(egui::Button::new(crate::i18n::ui_tr(ui, "Cancel")).corner_radius(14)).clicked() {
                         cancel = true;
                     }
                 });
@@ -1153,7 +1158,7 @@ pub(crate) fn context_menu(ui: &mut egui::Ui, view: &mut DocView, info: &DocInfo
     match selected {
         Some(a) => {
             let (page, index) = (a.page, a.index);
-            if ui.add_enabled(allowed, egui::Button::new("Edit text…")).clicked() {
+            if ui.add_enabled(allowed, egui::Button::new(crate::i18n::ui_tr(ui, "Edit text…"))).clicked() {
                 view.comments.composer = Some(Composer {
                     page,
                     at: [a.rect[2] as f64, a.rect[3] as f64],
@@ -1163,7 +1168,7 @@ pub(crate) fn context_menu(ui: &mut egui::Ui, view: &mut DocView, info: &DocInfo
                 });
                 ui.close();
             }
-            if ui.add_enabled(allowed, egui::Button::new("Reply")).clicked() {
+            if ui.add_enabled(allowed, egui::Button::new(crate::i18n::ui_tr(ui, "Reply"))).clicked() {
                 view.comments.reveal = true;
                 action = Some(CanvasAction::OpenComments);
                 ui.close();
@@ -1193,33 +1198,33 @@ pub(crate) fn context_menu(ui: &mut egui::Ui, view: &mut DocView, info: &DocInfo
                 action = Some(CanvasAction::Edit(Box::new(Edit::MarkAnnotation { page, index, marked: !marked, author: prefs.author.clone() })));
                 ui.close();
             }
-            if ui.button("Copy text").clicked() {
+            if ui.button(crate::i18n::ui_tr(ui, "Copy text")).clicked() {
                 ui.ctx().copy_text(a.contents.clone().unwrap_or_default());
                 ui.close();
             }
             ui.separator();
-            if ui.add_enabled(allowed && !a.locked, egui::Button::new("Delete")).clicked() {
+            if ui.add_enabled(allowed && !a.locked, egui::Button::new(crate::i18n::ui_tr(ui, "Delete"))).clicked() {
                 view.comments.selected = None;
                 action = Some(CanvasAction::Edit(Box::new(Edit::DeleteAnnotation { page, index })));
                 ui.close();
             }
-            if ui.add_enabled(allowed, egui::Button::new("Properties…")).clicked() {
+            if ui.add_enabled(allowed, egui::Button::new(crate::i18n::ui_tr(ui, "Properties…"))).clicked() {
                 action = Some(CanvasAction::Properties(page, index));
                 ui.close();
             }
-            if ui.add_enabled(tool_for(a).is_some(), egui::Button::new("Make Current Properties Default")).clicked() {
+            if ui.add_enabled(tool_for(a).is_some(), egui::Button::new(crate::i18n::ui_tr(ui, "Make Current Properties Default"))).clicked() {
                 view.comments.default_request = Some((page, index));
                 ui.close();
             }
         }
         None => {
             if let Some((page, at)) = view.comments.context_at
-                && ui.add_enabled(allowed, egui::Button::new("Add a sticky note here")).clicked()
+                && ui.add_enabled(allowed, egui::Button::new(crate::i18n::ui_tr(ui, "Add a sticky note here"))).clicked()
             {
                 view.comments.composer = Some(Composer { page, at, kind: ComposerKind::Note, text: String::new(), focus: true });
                 ui.close();
             }
-            if ui.button("Comments panel").clicked() {
+            if ui.button(crate::i18n::ui_tr(ui, "Comments panel")).clicked() {
                 action = Some(CanvasAction::OpenComments);
                 ui.close();
             }
@@ -1269,7 +1274,7 @@ pub(crate) fn quick_bar_controls(ui: &mut egui::Ui, tool: CommentTool, prefs: &m
     let (r, resp) = ui.allocate_exact_size(vec2(32.0, 32.0), Sense::click());
     ui.painter().circle_filled(r.center(), 9.0, color32(style.color));
     ui.painter().circle_stroke(r.center(), 9.0, Stroke::new(1.0, Color32::from_black_alpha(50)));
-    let resp = resp.on_hover_text("Colour");
+    let resp = resp.on_hover_text(crate::i18n::ui_tr(ui, "Colour"));
     egui::Popup::menu(&resp).align(egui::RectAlign::RIGHT_START).show(|ui| {
         if let Some(c) = swatch_grid(ui, Some(style.color)) {
             prefs.set_color(tool, c);
@@ -1280,7 +1285,7 @@ pub(crate) fn quick_bar_controls(ui: &mut egui::Ui, tool: CommentTool, prefs: &m
     egui::Popup::menu(&resp).align(egui::RectAlign::RIGHT_START).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
         ui.set_min_width(180.0);
         let mut percent = (style.opacity * 100.0).round();
-        ui.label(egui::RichText::new("Opacity").font(theme::semibold(12.0)));
+        ui.label(egui::RichText::new(crate::i18n::ui_tr(ui, "Opacity")).font(theme::semibold(12.0)));
         if ui.add(egui::Slider::new(&mut percent, 10.0..=100.0).step_by(5.0).suffix(" %")).changed() {
             prefs.set_opacity(tool, percent / 100.0);
         }
@@ -1290,7 +1295,7 @@ pub(crate) fn quick_bar_controls(ui: &mut egui::Ui, tool: CommentTool, prefs: &m
         egui::Popup::menu(&resp).align(egui::RectAlign::RIGHT_START).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
             ui.set_min_width(180.0);
             let mut w = style.width;
-            ui.label(egui::RichText::new("Line thickness").font(theme::semibold(12.0)));
+            ui.label(egui::RichText::new(crate::i18n::ui_tr(ui, "Line thickness")).font(theme::semibold(12.0)));
             if ui.add(egui::Slider::new(&mut w, 0.5..=12.0).step_by(0.5).suffix(" pt")).changed() {
                 prefs.set_width(tool, w);
             }

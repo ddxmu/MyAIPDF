@@ -24,18 +24,22 @@ enum RowAction {
 }
 
 pub(crate) fn body(ui: &mut egui::Ui, app: &mut PrintCraftApp, t: &Tokens) -> (bool, bool) {
-    ui.label(egui::RichText::new("Combine files").font(theme::semibold(18.0)));
+    ui.label(egui::RichText::new(crate::i18n::ui_tr(ui, "Combine files")).font(theme::semibold(18.0)));
     ui.add_space(4.0);
-    ui.label(egui::RichText::new("Files are combined in this order. Leave Pages empty to take every page.").small().color(t.text_faint));
+    ui.label(
+        egui::RichText::new(crate::i18n::ui_tr(ui, "Files are combined in this order. Leave Pages empty to take every page."))
+            .small()
+            .color(t.text_faint),
+    );
     ui.add_space(8.0);
     let mut action = None;
     let n = app.combine_draft.len();
     egui::ScrollArea::vertical().max_height(360.0).auto_shrink([false, true]).show(ui, |ui| {
         egui::Grid::new("combine-files").num_columns(4).min_col_width(40.0).spacing([10.0, 6.0]).striped(true).show(ui, |ui| {
-            ui.label(egui::RichText::new("File").color(t.text_muted));
-            ui.label(egui::RichText::new("Pages").color(t.text_muted));
-            ui.label("");
-            ui.label("");
+            ui.label(egui::RichText::new(crate::i18n::ui_tr(ui, "File")).color(t.text_muted));
+            ui.label(egui::RichText::new(crate::i18n::ui_tr(ui, "Pages")).color(t.text_muted));
+            ui.label(crate::i18n::ui_tr(ui, ""));
+            ui.label(crate::i18n::ui_tr(ui, ""));
             ui.end_row();
             for (i, f) in app.combine_draft.iter_mut().enumerate() {
                 ui.horizontal(|ui| {
@@ -43,7 +47,7 @@ pub(crate) fn body(ui: &mut egui::Ui, app: &mut PrintCraftApp, t: &Tokens) -> (b
                     ui.add(egui::Label::new(&f.name).truncate());
                     ui.label(egui::RichText::new(format!("{} page{}", f.pages, if f.pages == 1 { "" } else { "s" })).small().color(t.text_faint));
                 });
-                ui.add_sized([120.0, 22.0], egui::TextEdit::singleline(&mut f.range).hint_text("All pages"))
+                ui.add_sized([120.0, 22.0], egui::TextEdit::singleline(&mut f.range).hint_text(crate::i18n::ui_tr(ui, "All pages")))
                     .on_hover_text(format!("Pages of {} to combine, e.g. 1-3, 6", f.name));
                 ui.horizontal(|ui| {
                     if ui.add_enabled_ui(i > 0, |ui| icons::button(ui, "chevron-up", 24.0, false, "Move up")).inner.clicked() {

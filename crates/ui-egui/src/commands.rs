@@ -11,6 +11,12 @@ use crate::{Dialog, Mode, PrintCraftApp, PropsTab, RightPanel, SaveTarget, theme
 
 impl PrintCraftApp {
     pub(crate) fn command_enabled(&self, spec: &CommandSpec) -> bool {
+        if spec.id == "help.check_updates" && self.update_source.is_none() {
+            return false;
+        }
+        if spec.id == "help.install_update" && !self.install_update_enabled() {
+            return false;
+        }
         commands::is_enabled(spec, &self.session, self.active_ids().map(|(_, id)| id))
     }
 
@@ -67,6 +73,20 @@ impl PrintCraftApp {
         let active = self.active;
         let targets = active.map(|i| self.views[i].target_pages()).unwrap_or_default();
         match id {
+            "ai.ask" | "ai.summary" | "ai.translate" => {
+                self.mode = Mode::AllTools;
+                self.left_open = true;
+                self.left = crate::LeftPanel::Tool("ai");
+                self.ai.input = match id {
+                    "ai.summary" => "请总结所选 PDF 范围的要点。",
+                    "ai.translate" => "请将所选 PDF 范围翻译为简体中文。",
+                    _ => "",
+                }
+                .into();
+                if id != "ai.ask" {
+                    self.ai.include_text = true;
+                }
+            }
             "file.open" => self.open_dialog(),
             "page.combine" => self.combine_dialog(),
             "file.save" => {
@@ -461,6 +481,7 @@ impl PrintCraftApp {
             "help.shortcuts" => self.dialog = Some(Dialog::Shortcuts),
             "help.about" => self.dialog = Some(Dialog::About),
             "help.check_updates" => self.check_for_updates(),
+            "help.install_update" => self.install_update(),
             _ => return false,
         }
         true
@@ -499,6 +520,9 @@ impl PrintCraftApp {
 pub(crate) fn registry_menu(app: &mut PrintCraftApp, ui: &mut egui::Ui, menu: &str) {
     let mac = cfg!(target_os = "macos") || cfg!(target_arch = "wasm32");
     for spec in commands::menu(menu) {
+        if (spec.id == "help.check_updates" && app.update_source.is_none()) || (spec.id == "help.install_update" && app.update_installer.is_none()) {
+            continue;
+        }
         let label = commands::current_label(spec, &app.session, app.active_ids().map(|(_, id)| id));
         let label = app.language.tr(&label);
         let shortcut = spec.shortcut.map(|s| s.label(mac)).unwrap_or_default();

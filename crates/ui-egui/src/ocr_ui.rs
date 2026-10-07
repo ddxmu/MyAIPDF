@@ -64,7 +64,7 @@ pub(crate) fn body(ui: &mut egui::Ui, app: &mut PrintCraftApp, t: &Tokens) -> (b
     let d = &mut app.ocr_draft;
     d.to = d.to.clamp(1, pages);
     d.from = d.from.clamp(1, d.to);
-    ui.label(egui::RichText::new("Recognize Text").font(theme::semibold(18.0)));
+    ui.label(egui::RichText::new(crate::i18n::ui_tr(ui, "Recognize Text")).font(theme::semibold(18.0)));
     ui.add_space(8.0);
     let group = |ui: &mut egui::Ui, title: &str, body: &mut dyn FnMut(&mut egui::Ui)| {
         ui.label(egui::RichText::new(title).font(theme::semibold(13.0)));
@@ -75,19 +75,19 @@ pub(crate) fn body(ui: &mut egui::Ui, app: &mut PrintCraftApp, t: &Tokens) -> (b
         ui.add_space(8.0);
     };
     group(ui, "Pages", &mut |ui| {
-        ui.radio_value(&mut d.pages, OcrPages::All, "All pages");
-        ui.radio_value(&mut d.pages, OcrPages::Current, "Current page");
+        ui.radio_value(&mut d.pages, OcrPages::All, crate::i18n::ui_tr(ui, "All pages"));
+        ui.radio_value(&mut d.pages, OcrPages::Current, crate::i18n::ui_tr(ui, "Current page"));
         ui.horizontal(|ui| {
-            ui.radio_value(&mut d.pages, OcrPages::Range, "From");
+            ui.radio_value(&mut d.pages, OcrPages::Range, crate::i18n::ui_tr(ui, "From"));
             let on = d.pages == OcrPages::Range;
             ui.add_enabled(on, egui::DragValue::new(&mut d.from).range(1..=pages));
-            ui.label("to");
+            ui.label(crate::i18n::ui_tr(ui, "to"));
             ui.add_enabled(on, egui::DragValue::new(&mut d.to).range(1..=pages));
         });
     });
     group(ui, "Settings", &mut |ui| {
         egui::Grid::new("ocr-settings").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
-            ui.label("Document language");
+            ui.label(crate::i18n::ui_tr(ui, "Document language"));
             let name = LANGUAGES.iter().find(|l| l.0 == d.language).map_or("English", |l| l.1);
             egui::ComboBox::from_id_salt("ocr-language").selected_text(name).width(220.0).show_ui(ui, |ui| {
                 for (code, name) in LANGUAGES {
@@ -95,14 +95,14 @@ pub(crate) fn body(ui: &mut egui::Ui, app: &mut PrintCraftApp, t: &Tokens) -> (b
                 }
             });
             ui.end_row();
-            ui.label("Output");
+            ui.label(crate::i18n::ui_tr(ui, "Output"));
             egui::ComboBox::from_id_salt("ocr-output").selected_text("Searchable Image (Exact)").width(220.0).show_ui(ui, |ui| {
                 let _ = ui
                     .selectable_label(true, "Searchable Image (Exact)")
-                    .on_hover_text("Adds invisible text over each word; the page image is not changed");
+                    .on_hover_text(crate::i18n::ui_tr(ui, "Adds invisible text over each word; the page image is not changed"));
             });
             ui.end_row();
-            ui.label("Downsample to");
+            ui.label(crate::i18n::ui_tr(ui, "Downsample to"));
             egui::ComboBox::from_id_salt("ocr-dpi").selected_text(format!("{} dpi", d.dpi)).width(220.0).show_ui(ui, |ui| {
                 for v in [600, 300, 150, 72] {
                     ui.selectable_value(&mut d.dpi, v, format!("{v} dpi"));
@@ -113,9 +113,12 @@ pub(crate) fn body(ui: &mut egui::Ui, app: &mut PrintCraftApp, t: &Tokens) -> (b
     });
     if !available {
         ui.label(
-            egui::RichText::new("Text recognition isn't installed: its models are missing (run `cargo xtask models`, or set PRINTCRAFT_MODELS).")
-                .small()
-                .color(t.text_muted),
+            egui::RichText::new(crate::i18n::ui_tr(
+                ui,
+                "Text recognition isn't installed: its models are missing (run `cargo xtask models`, or set PRINTCRAFT_MODELS).",
+            ))
+            .small()
+            .color(t.text_muted),
         );
         ui.add_space(6.0);
     }

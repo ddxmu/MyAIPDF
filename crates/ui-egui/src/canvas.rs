@@ -911,7 +911,7 @@ pub fn document_area(app: &mut PrintCraftApp, index: usize, ui: &mut egui::Ui) {
     let Some(doc) = app.session.get(app.views[index].id) else { return };
     let info = &doc.info;
     if info.pages.is_empty() {
-        ui.centered_and_justified(|ui| ui.label("This document has no pages."));
+        ui.centered_and_justified(|ui| ui.label(crate::i18n::ui_tr(ui, "This document has no pages.")));
         return;
     }
     let want_thumbs = app.right == Some(RightPanel::Pages) || app.views[index].organize || app.dialog == Some(crate::Dialog::Print);
@@ -1476,11 +1476,11 @@ pub fn document_area(app: &mut PrintCraftApp, index: usize, ui: &mut egui::Ui) {
                     });
                     ui.separator();
                 }
-                if ui.button("Properties…").clicked() {
+                if ui.button(crate::i18n::ui_tr(ui, "Properties…")).clicked() {
                     field_menu = Some(FieldMenu::Properties);
                     ui.close();
                 }
-                if ui.add_enabled(can_modify, egui::Button::new("Duplicate…")).clicked() {
+                if ui.add_enabled(can_modify, egui::Button::new(crate::i18n::ui_tr(ui, "Duplicate…"))).clicked() {
                     field_menu = Some(FieldMenu::Duplicate(name.clone()));
                     ui.close();
                 }
@@ -1756,7 +1756,7 @@ fn find_bar(view: &mut DocView, pages: usize, area: Rect, ui: &mut egui::Ui, t: 
                         ui.add(icons::image("search", 16.0, t.text_muted));
                         let edit = egui::TextEdit::singleline(&mut find.query)
                             .id(egui::Id::new("find-input"))
-                            .hint_text("Find text")
+                            .hint_text(crate::i18n::ui_tr(ui, "Find text"))
                             .desired_width(220.0)
                             .frame(egui::Frame::NONE);
                         let r = ui.add(edit);
@@ -1788,8 +1788,8 @@ fn find_bar(view: &mut DocView, pages: usize, area: Rect, ui: &mut egui::Ui, t: 
                         }
                         let opts = icons::button(ui, "settings-2", 26.0, find.case_sensitive || find.whole_words, "Find options");
                         egui::Popup::menu(&opts).show(|ui| {
-                            let a = ui.checkbox(&mut find.whole_words, "Whole words only").changed();
-                            let b = ui.checkbox(&mut find.case_sensitive, "Case-sensitive").changed();
+                            let a = ui.checkbox(&mut find.whole_words, crate::i18n::ui_tr(ui, "Whole words only")).changed();
+                            let b = ui.checkbox(&mut find.case_sensitive, crate::i18n::ui_tr(ui, "Case-sensitive")).changed();
                             if a || b {
                                 // Search again with the new options.
                                 find.case_query.clear();
@@ -1872,7 +1872,11 @@ fn notices(
             true,
         ))
     } else if !info.fields.is_empty() {
-        Some(("text-cursor-input", format!("This document contains {} interactive form fields.", info.fields.len()), true))
+        Some((
+            "text-cursor-input",
+            crate::i18n::ui_tr(ui, "This document contains {count} interactive form fields.").replace("{count}", &info.fields.len().to_string()),
+            true,
+        ))
     } else if repaired {
         Some(("bandage", "This file was damaged and has been repaired. Saving keeps the repaired version.".to_string(), false))
     } else if !info.warnings.is_empty() {
@@ -2108,7 +2112,7 @@ fn organize_toolbar(view: &mut DocView, info: &DocInfo, editable: bool, ui: &mut
                             ui.close();
                         }
                     }
-                    if ui.button("None").clicked() {
+                    if ui.button(crate::i18n::ui_tr(ui, "None")).clicked() {
                         view.select_pages(&[]);
                         ui.close();
                     }
@@ -2122,7 +2126,7 @@ fn organize_toolbar(view: &mut DocView, info: &DocInfo, editable: bool, ui: &mut
                 }
             });
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if widgets::ghost_button(ui, "x", "Close").on_hover_text("Back to the document").clicked() {
+                if widgets::ghost_button(ui, "x", "Close").on_hover_text(crate::i18n::ui_tr(ui, "Back to the document")).clicked() {
                     view.organize = false;
                 }
             });
@@ -2247,15 +2251,15 @@ fn organize_grid(view: &mut DocView, info: &DocInfo, pool: &RenderPool, editable
                         view.selected = [i].into();
                         view.current = i;
                     }
-                    if ui.add_enabled(editable, egui::Button::new("Cut")).clicked() {
+                    if ui.add_enabled(editable, egui::Button::new(crate::i18n::ui_tr(ui, "Cut"))).clicked() {
                         view.pending_action = Some(ViewAction::CopyPages { cut: true });
                         ui.close();
                     }
-                    if ui.button("Copy").clicked() {
+                    if ui.button(crate::i18n::ui_tr(ui, "Copy")).clicked() {
                         view.pending_action = Some(ViewAction::CopyPages { cut: false });
                         ui.close();
                     }
-                    if ui.add_enabled(editable, egui::Button::new("Paste after")).clicked() {
+                    if ui.add_enabled(editable, egui::Button::new(crate::i18n::ui_tr(ui, "Paste after"))).clicked() {
                         view.pending_action = Some(ViewAction::PastePages);
                         ui.close();
                     }

@@ -52,7 +52,7 @@ pub(crate) fn body(ui: &mut egui::Ui, app: &mut PrintCraftApp, t: &Tokens, kind:
     ui.add_space(8.0);
     if kind == ExportKind::Image {
         ui.horizontal(|ui| {
-            ui.label("Resolution");
+            ui.label(crate::i18n::ui_tr(ui, "Resolution"));
             egui::ComboBox::from_id_salt("export-dpi").selected_text(format!("{} pixels/inch", d.dpi)).show_ui(ui, |ui| {
                 for dpi in [72.0, 96.0, 150.0, 300.0, 600.0] {
                     ui.selectable_value(&mut d.dpi, dpi, format!("{dpi} pixels/inch"));
@@ -60,7 +60,7 @@ pub(crate) fn body(ui: &mut egui::Ui, app: &mut PrintCraftApp, t: &Tokens, kind:
             });
         });
         ui.horizontal(|ui| {
-            ui.label("Format");
+            ui.label(crate::i18n::ui_tr(ui, "Format"));
             let mut quality = match d.format {
                 ImageFormat::Jpeg { quality } => quality,
                 _ => 85,
@@ -74,7 +74,7 @@ pub(crate) fn body(ui: &mut egui::Ui, app: &mut PrintCraftApp, t: &Tokens, kind:
                 }
             });
             if let ImageFormat::Jpeg { .. } = d.format {
-                ui.label("Quality");
+                ui.label(crate::i18n::ui_tr(ui, "Quality"));
                 if ui.add(egui::Slider::new(&mut quality, 10..=100)).changed() {
                     d.format = ImageFormat::Jpeg { quality };
                 }
@@ -83,7 +83,7 @@ pub(crate) fn body(ui: &mut egui::Ui, app: &mut PrintCraftApp, t: &Tokens, kind:
         ui.label(egui::RichText::new(format!("One {} file per page, named after the document.", d.format.label())).small().color(t.text_faint));
     } else if kind == ExportKind::AllImages {
         ui.horizontal(|ui| {
-            ui.label("Exclude images smaller than");
+            ui.label(crate::i18n::ui_tr(ui, "Exclude images smaller than"));
             let label = |n: u32| if n == 0 { "No limit".to_string() } else { format!("{n} pixels") };
             egui::ComboBox::from_id_salt("export-min").selected_text(label(d.min_side)).show_ui(ui, |ui| {
                 for n in [0, 16, 32, 64, 128, 256] {
@@ -92,15 +92,22 @@ pub(crate) fn body(ui: &mut egui::Ui, app: &mut PrintCraftApp, t: &Tokens, kind:
             });
         });
         ui.label(
-            egui::RichText::new("Each image once, named after the document and page. JPEG images are saved unchanged; others as PNG.")
+            egui::RichText::new(crate::i18n::ui_tr(
+                ui,
+                "Each image once, named after the document and page. JPEG images are saved unchanged; others as PNG.",
+            ))
+            .small()
+            .color(t.text_faint),
+        );
+    } else {
+        ui.label(
+            egui::RichText::new(crate::i18n::ui_tr(ui, "Plain text in reading order; pages are separated by form feeds."))
                 .small()
                 .color(t.text_faint),
         );
-    } else {
-        ui.label(egui::RichText::new("Plain text in reading order; pages are separated by form feeds.").small().color(t.text_faint));
     }
     ui.add_space(6.0);
-    ui.label(egui::RichText::new("Pages").font(theme::semibold(12.5)));
+    ui.label(egui::RichText::new(crate::i18n::ui_tr(ui, "Pages")).font(theme::semibold(12.5)));
     d.range.ui(ui, count);
     ui.add_space(12.0);
     let (mut apply, mut cancel) = (false, false);

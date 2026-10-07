@@ -14,8 +14,6 @@ on:
       - "**/build.rs"
       - .github/workflows/windows-arm64.yml
       - packaging/windows/**
-  schedule:
-    - cron: "41 4 * * 1" # weekly, so drift in the runner images shows up
   workflow_dispatch:
 
 concurrency:
@@ -32,6 +30,7 @@ env:
 
 jobs:
   package:
+    if: github.repository == 'storytold/printcraft'
     name: package (cross-compiled on x64)
     runs-on: windows-latest
     timeout-minutes: 90
@@ -113,6 +112,7 @@ jobs:
           Write-Output 'ok uninstalled'
 
   test:
+    if: github.repository == 'storytold/printcraft'
     name: test (native ARM64)
     runs-on: windows-11-arm
     timeout-minutes: 120

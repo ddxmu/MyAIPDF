@@ -154,11 +154,11 @@ fn calendar(ctx: &egui::Context, view: &mut DocView, field: egui::Rect, fmt: &st
         .show(ctx, |ui| {
             egui::Frame::popup(ui.style()).show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    if ui.small_button("‹").on_hover_text("Previous month").clicked() {
+                    if ui.small_button(crate::i18n::ui_tr(ui, "‹")).on_hover_text(crate::i18n::ui_tr(ui, "Previous month")).clicked() {
                         (y, m) = if m == 1 { (y - 1, 12) } else { (y, m - 1) };
                     }
                     ui.label(egui::RichText::new(format!("{} {y}", MONTHS[(m.clamp(1, 12) - 1) as usize])).strong());
-                    if ui.small_button("›").on_hover_text("Next month").clicked() {
+                    if ui.small_button(crate::i18n::ui_tr(ui, "›")).on_hover_text(crate::i18n::ui_tr(ui, "Next month")).clicked() {
                         (y, m) = if m == 12 { (y + 1, 1) } else { (y, m + 1) };
                     }
                 });
@@ -190,7 +190,7 @@ fn calendar(ctx: &egui::Context, view: &mut DocView, field: egui::Rect, fmt: &st
                                 picked = Some(format_date(DateTime { y, m, d: day, hh: 0, mm: 0, ss: 0 }, fmt));
                             }
                         } else {
-                            ui.label("");
+                            ui.label(crate::i18n::ui_tr(ui, ""));
                         }
                         if cell % 7 == 6 {
                             ui.end_row();
@@ -328,7 +328,7 @@ pub(crate) fn overlay(ctx: &egui::Context, view: &mut DocView, info: &DocInfo, f
                                 }
                             }
                         });
-                        if multi && ui.button("Done").clicked() {
+                        if multi && ui.button(crate::i18n::ui_tr(ui, "Done")).clicked() {
                             commit(view, form);
                         }
                     });

@@ -136,10 +136,10 @@ fn buttons(ui: &mut egui::Ui, primary: &str, others: &[&str]) -> Option<String> 
 
 /// The JavaScript console. Returns `true` to close.
 pub(crate) fn console_body(ui: &mut egui::Ui, app: &mut PrintCraftApp, t: &Tokens) -> bool {
-    ui.label(egui::RichText::new("JavaScript Console").font(theme::semibold(18.0)));
+    ui.label(egui::RichText::new(crate::i18n::ui_tr(ui, "JavaScript Console")).font(theme::semibold(18.0)));
     ui.add_space(6.0);
     if !app.session.javascript() {
-        ui.label(egui::RichText::new("JavaScript is turned off (Preferences ▸ JavaScript).").small().color(t.text_muted));
+        ui.label(egui::RichText::new(crate::i18n::ui_tr(ui, "JavaScript is turned off (Preferences ▸ JavaScript).")).small().color(t.text_muted));
     }
     egui::Frame::new().fill(t.hover).corner_radius(egui::CornerRadius::same(6)).inner_margin(egui::Margin::same(8)).show(ui, |ui| {
         ui.set_width(ui.available_width());
@@ -147,7 +147,7 @@ pub(crate) fn console_body(ui: &mut egui::Ui, app: &mut PrintCraftApp, t: &Token
             ui.set_width(ui.available_width());
             ui.set_min_height(160.0);
             if app.js_console.log.is_empty() {
-                ui.label(egui::RichText::new("Output appears here.").color(t.text_muted));
+                ui.label(egui::RichText::new(crate::i18n::ui_tr(ui, "Output appears here.")).color(t.text_muted));
             }
             for line in &app.js_console.log {
                 ui.label(egui::RichText::new(line).monospace());
@@ -160,7 +160,7 @@ pub(crate) fn console_body(ui: &mut egui::Ui, app: &mut PrintCraftApp, t: &Token
             .code_editor()
             .desired_rows(4)
             .desired_width(f32::INFINITY)
-            .hint_text("JavaScript, e.g. getField(\"total\").value")
+            .hint_text(crate::i18n::ui_tr(ui, "JavaScript, e.g. getField(\"total\").value"))
             .id_salt("js-console-input"),
     );
     let run_key = input.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter) && i.modifiers.command);
@@ -177,12 +177,12 @@ pub(crate) fn console_body(ui: &mut egui::Ui, app: &mut PrintCraftApp, t: &Token
 
 /// Document JavaScripts: list, edit, add and delete. Returns `true` to close.
 pub(crate) fn document_js_body(ui: &mut egui::Ui, app: &mut PrintCraftApp, t: &Tokens) -> bool {
-    ui.label(egui::RichText::new("Document JavaScripts").font(theme::semibold(18.0)));
+    ui.label(egui::RichText::new(crate::i18n::ui_tr(ui, "Document JavaScripts")).font(theme::semibold(18.0)));
     ui.add_space(6.0);
     let scripts = app.active_ids().and_then(|(_, id)| app.session.get(id)).map(|d| d.document_scripts()).unwrap_or_default();
     let mut edit: Option<Edit> = None;
     ui.horizontal(|ui| {
-        ui.label("Script Name:");
+        ui.label(crate::i18n::ui_tr(ui, "Script Name:"));
         ui.add(egui::TextEdit::singleline(&mut app.doc_js.name).desired_width(240.0).id_salt("doc-js-name"));
     });
     ui.add_space(4.0);
@@ -191,7 +191,7 @@ pub(crate) fn document_js_body(ui: &mut egui::Ui, app: &mut PrintCraftApp, t: &T
         egui::ScrollArea::vertical().max_height(120.0).id_salt("doc-js-list").show(ui, |ui| {
             ui.set_width(ui.available_width());
             if scripts.is_empty() {
-                ui.label(egui::RichText::new("This document has no document-level scripts.").color(t.text_muted));
+                ui.label(egui::RichText::new(crate::i18n::ui_tr(ui, "This document has no document-level scripts.")).color(t.text_muted));
             }
             for (name, js) in &scripts {
                 if ui.selectable_label(app.doc_js.name == *name, name).clicked() {
@@ -243,7 +243,7 @@ pub(crate) fn preferences_body(ui: &mut egui::Ui, app: &mut PrintCraftApp, t: &T
             .labelled_by(label.id);
     });
     ui.add_space(8.0);
-    ui.label(egui::RichText::new("JavaScript").font(theme::semibold(13.0)));
+    ui.label(egui::RichText::new(crate::i18n::ui_tr(ui, "JavaScript")).font(theme::semibold(13.0)));
     egui::Frame::new().fill(t.hover).corner_radius(egui::CornerRadius::same(6)).inner_margin(egui::Margin::same(10)).show(ui, |ui| {
         ui.set_width(ui.available_width());
         let mut on = app.session.javascript();
@@ -251,7 +251,7 @@ pub(crate) fn preferences_body(ui: &mut egui::Ui, app: &mut PrintCraftApp, t: &T
             app.session.set_javascript(on);
         }
         ui.label(
-            egui::RichText::new("Scripts run in a sandbox without file or network access. With JavaScript off, Acrobat's standard format, validate and calculate functions still work.")
+            egui::RichText::new(crate::i18n::ui_tr(ui, "Scripts run in a sandbox without file or network access. With JavaScript off, Acrobat's standard format, validate and calculate functions still work."))
                 .small()
                 .color(t.text_muted),
         );

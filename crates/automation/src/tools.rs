@@ -108,6 +108,19 @@ pub fn tools() -> Vec<ToolDef> {
     let save_out = json!({ "type": "string", "description": "File to write. Omit to open the result as a new unsaved document instead." });
     let open = json!({ "type": "boolean", "description": "Also open the result as a new document (default: only when out is omitted)." });
     vec![
+        t("update_check", "检查 MyAIPDF 更新", "Explicit GitHub request for ddxmu/MyAIPDF's latest stable release. No credentials or PDF contents are sent.")
+            .ro().cmd("help.check_updates").with(schema(json!({}), &[])),
+        t("update_download", "下载 MyAIPDF 更新", "Fetch the latest stable release from ddxmu/MyAIPDF into a new private directory under out_dir. SHA-256 verified; does not install.")
+            .with(schema(json!({"out_dir":path_arg()}), &["out_dir"])),
+        t("update_install", "安装 MyAIPDF 更新", "Install a verified package into the exact, closed MyAIPDF.app. Requires confirm:true and no unsaved documents. Preserves the old app backup; honors --root for both paths.")
+            .destructive().cmd("help.install_update").with(schema(json!({
+                "path":path_arg(),"application":path_arg(),"version":{"type":"string"},"sha256":{"type":"string"},
+                "size":{"type":"integer","minimum":1},"confirm":{"type":"boolean"}
+            }), &["path","application","version","sha256","size","confirm"])),
+        t("ai_models", "获取 AI 模型列表", "Explicit request to an OpenAI-compatible /models endpoint. Does not send PDF contents. Secrets are never returned.")
+            .ro().with(schema(json!({"api_url":{"type":"string"},"api_key":{"type":"string"}}), &["api_url"])),
+        t("ai_chat", "AI 协助 PDF 处理", "Send explicit prompt and optional context to the configured AI API. Returns advice and a reviewed operation proposal; NEVER executes it or saves a document.")
+            .ro().with(schema(json!({"api_url":{"type":"string"},"api_key":{"type":"string"},"model":{"type":"string"},"prompt":{"type":"string"},"context":{"type":"string"}}), &["api_url","model","prompt"])),
         t("doc_open", "Open a PDF", "Open a PDF file and return its document id, page count and whether it can be edited.")
             .cmd("file.open")
             .with(schema(json!({ "path": { "type": "string" }, "password": { "type": "string", "description": "User or owner password for encrypted files." } }), &["path"])),

@@ -1,0 +1,21 @@
+[package]
+name = "printcraft-ai"
+description = "MyAIPDF OpenAI-compatible model client and reviewed PDF operation proposals"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+url = "2.5"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+ureq = { version = "3.4", default-features = false, features = ["rustls-no-provider", "_ring", "json"] }
+rustls-native-certs = "0.8"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+security-framework = "3.7"

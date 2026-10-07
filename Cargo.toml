@@ -9,7 +9,7 @@ version = "0.2.1"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 rust-version = "1.90"
-repository = "https://github.com/storytold/printcraft"
+repository = "https://github.com/ddxmu/MyAIPDF"
 
 [workspace.dependencies]
 # internal
@@ -40,6 +40,8 @@ printcraft-render = { path = "crates/render", version = "0.2.0" }
 printcraft-engine = { path = "crates/engine", version = "0.2.0" }
 printcraft-ui-egui = { path = "crates/ui-egui", version = "0.2.0" }
 printcraft-automation = { path = "crates/automation", version = "0.2.0", default-features = false }
+printcraft-ai = { path = "crates/ai" }
+printcraft-update = { path = "crates/update" }
 
 # pdf
 hayro = "0.7.1"

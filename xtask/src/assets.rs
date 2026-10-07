@@ -314,7 +314,7 @@ pub fn fetch_all(m: &Manifest, dir: &Path, kind: &str) -> Result<Vec<PathBuf>> {
     Ok(out)
 }
 
-fn fetch_verified(url: &str, path: &Path, sha256: &str) -> Result<()> {
+pub(crate) fn fetch_verified(url: &str, path: &Path, sha256: &str) -> Result<()> {
     if std::fs::read(path).is_ok_and(|b| sha256_hex(&b) == sha256) {
         return Ok(());
     }
@@ -391,7 +391,7 @@ pub fn render_markdown(m: &Manifest) -> String {
         let _ = writeln!(s, "| `{}` | {} | {} | {} | {} | {} |", f.file, esc(&f.title), esc(&f.author), f.licence, esc(&f.source), esc(&f.usage));
     }
     s.push_str(&format!(
-        "\n## Optional build inputs ({})\n\nNot in this repository and never downloaded by it: compiled in only when the build sets the option (official releases do). Each input attributes its own files.\n\n| Input | Option | Title | Author | Licence | Source | Attribution | Used for |\n|---|---|---|---|---|---|---|---|\n",
+        "\n## Optional build inputs ({})\n\nKept outside this product repository: compiled in only when the build sets the option. MyAIPDF's explicit font bootstrap prepares an independent, pinned and SHA-256 verified craft-fonts input. Each input attributes its own files.\n\n| Input | Option | Title | Author | Licence | Source | Attribution | Used for |\n|---|---|---|---|---|---|---|---|\n",
         m.build_input.len()
     ));
     for b in &m.build_input {

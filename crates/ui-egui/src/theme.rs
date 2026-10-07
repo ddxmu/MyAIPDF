@@ -109,8 +109,8 @@ pub fn install_fonts(ctx: &egui::Context) {
 }
 
 /// The interface fonts: Inter (and JetBrains Mono for code) first, then egui's defaults, then
-/// the Japanese faces of the optional craft-fonts build input (BIZ UDPGothic first) as the last
-/// fallback in every family. Without craft-fonts there is no Japanese face.
+/// weight-matched Chinese sans faces and the Japanese faces of the optional craft-fonts build
+/// input (BIZ UDPGothic first). Without craft-fonts there is no CJK face.
 pub fn font_definitions() -> FontDefinitions {
     let mut fonts = FontDefinitions::default();
     let add = |fonts: &mut FontDefinitions, name: &str, bytes: &'static [u8]| {
@@ -122,8 +122,12 @@ pub fn font_definitions() -> FontDefinitions {
     add(&mut fonts, "JetBrainsMono", include_bytes!("../../../assets/fonts/JetBrainsMono-Regular.ttf"));
     fonts.families.entry(FontFamily::Proportional).or_default().insert(0, "Inter".to_owned());
     fonts.families.entry(FontFamily::Monospace).or_default().insert(0, "JetBrainsMono".to_owned());
-    // The same static bytes printcraft-fonts uses for Japanese text in PDFs: one copy, not two.
-    for face in printcraft_fonts::ui_japanese_fonts() {
+    // Share the document font bytes; do not copy or discover proprietary system fonts.
+    for face in printcraft_fonts::CRAFT_FONTS.iter().filter(|f| f.covers("Hans")) {
+        add(&mut fonts, &face.name(), face.bytes);
+    }
+    for face in printcraft_fonts::CRAFT_FONTS.iter().filter(|f| f.covers("Hans") && f.style == "Regular").chain(printcraft_fonts::ui_japanese_fonts())
+    {
         let name = face.name();
         add(&mut fonts, &name, face.bytes);
         for family in [FontFamily::Proportional, FontFamily::Monospace] {
@@ -131,8 +135,9 @@ pub fn font_definitions() -> FontDefinitions {
         }
     }
     let fallback: Vec<String> = fonts.families[&FontFamily::Proportional].clone();
-    for (fam, primary) in [("medium", "Inter-Medium"), ("semibold", "Inter-SemiBold")] {
+    for (fam, primary, chinese_style) in [("medium", "Inter-Medium", "Medium"), ("semibold", "Inter-SemiBold", "SemiBold")] {
         let mut stack = vec![primary.to_owned()];
+        stack.extend(printcraft_fonts::CRAFT_FONTS.iter().filter(|f| f.covers("Hans") && f.style == chinese_style).map(|f| f.name()));
         stack.extend(fallback.iter().cloned());
         fonts.families.insert(FontFamily::Name(fam.into()), stack);
     }

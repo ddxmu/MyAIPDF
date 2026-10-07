@@ -58,14 +58,15 @@ pub(crate) fn create_body(ui: &mut egui::Ui, app: &mut PrintCraftApp, t: &Tokens
         c
     };
     let d = &mut app.stamp_draft;
-    ui.label(egui::RichText::new("Create Custom Stamp").font(theme::semibold(18.0)));
+    ui.label(egui::RichText::new(crate::i18n::ui_tr(ui, "Create Custom Stamp")).font(theme::semibold(18.0)));
     ui.add_space(8.0);
     ui.label(egui::RichText::new(format!("From {}", d.file)).color(t.text_muted));
     ui.add_space(8.0);
     egui::Grid::new("stamp-create").num_columns(2).spacing([10.0, 8.0]).show(ui, |ui| {
-        let l = ui.label("Category:");
+        let l = ui.label(crate::i18n::ui_tr(ui, "Category:"));
         ui.horizontal(|ui| {
-            ui.add(egui::TextEdit::singleline(&mut d.category).desired_width(200.0).hint_text("e.g. My stamps")).labelled_by(l.id);
+            ui.add(egui::TextEdit::singleline(&mut d.category).desired_width(200.0).hint_text(crate::i18n::ui_tr(ui, "e.g. My stamps")))
+                .labelled_by(l.id);
             if !categories.is_empty() {
                 egui::ComboBox::from_id_salt("stamp-categories").selected_text("").width(24.0).show_ui(ui, |ui| {
                     for c in &categories {
@@ -77,7 +78,7 @@ pub(crate) fn create_body(ui: &mut egui::Ui, app: &mut PrintCraftApp, t: &Tokens
             }
         });
         ui.end_row();
-        let l = ui.label("Name:");
+        let l = ui.label(crate::i18n::ui_tr(ui, "Name:"));
         ui.add(egui::TextEdit::singleline(&mut d.name).desired_width(200.0)).labelled_by(l.id);
         ui.end_row();
     });
@@ -111,7 +112,7 @@ pub(crate) fn palette_section(app: &mut PrintCraftApp, ui: &mut egui::Ui, t: &To
                 app.quick_tool = QuickTool::CustomStamp(i);
             }
             resp.context_menu(|ui| {
-                if ui.button("Delete stamp").clicked() {
+                if ui.button(crate::i18n::ui_tr(ui, "Delete stamp")).clicked() {
                     remove = Some(i);
                     ui.close();
                 }
@@ -123,7 +124,7 @@ pub(crate) fn palette_section(app: &mut PrintCraftApp, ui: &mut egui::Ui, t: &To
         app.quick_tool = QuickTool::Select;
     }
     ui.add_space(4.0);
-    if widgets::pill_button(ui, "Create custom stamp…", false).on_hover_text("From a PDF page or an image").clicked() {
+    if widgets::pill_button(ui, "Create custom stamp…", false).on_hover_text(crate::i18n::ui_tr(ui, "From a PDF page or an image")).clicked() {
         app.pick_stamp_file();
     }
 }

@@ -297,11 +297,12 @@ pub const COMMANDS: &[CommandSpec] = &[
     c("page.split", "Split document…", PAGES, None, Assembly, "scissors"),
     c("page.number", "Number pages…", PAGES, None, Assembly, "hash"),
     c("help.shortcuts", "Keyboard shortcuts", HELP, None, Nothing, "circle-help"),
-    c("help.discord", "Join the ArtCraft Discord", HELP, None, Nothing, "messages-square"),
-    c("help.app_page", "PrintCraft web page", HELP, None, Nothing, "globe"),
+    c("ai.ask", "AI assistant", None, None, Nothing, "sparkles"),
+    c("ai.summary", "Summarize", None, None, Document, "sparkles"),
+    c("ai.translate", "Translate", None, None, Document, "sparkles"),
     c("help.github", "PrintCraft on GitHub", HELP, None, Nothing, "code-xml"),
-    c("help.website", "ArtCraft website", HELP, None, Nothing, "external-link"),
     c("help.check_updates", "Check for updates…", HELP, None, Nothing, "cloud"),
+    c("help.install_update", "安装更新并重启", HELP, None, Nothing, "download"),
     c("help.about", "About PrintCraft", HELP, None, Nothing, "info"),
 ];
 

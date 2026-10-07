@@ -68,6 +68,11 @@ fn every_registered_command_is_implemented() {
             continue;
         }
         let mut app = PrintCraftApp::new();
+        // No native network/install callbacks are attached in this headless harness.
+        if matches!(spec.id, "help.check_updates" | "help.install_update") {
+            assert!(!app.execute(spec.id));
+            continue;
+        }
         if spec.id.starts_with("form.") || spec.id == "comment.flatten" {
             app.open_bytes("form.pdf", None, include_bytes!("data/form.pdf").to_vec()).unwrap();
         } else {
@@ -221,5 +226,5 @@ fn the_about_dialog_shows_the_running_version() {
     let mut h = harness();
     h.state_mut().execute("help.about");
     h.run_steps(3);
-    h.get_by_label_contains(&format!("Version {}", env!("CARGO_PKG_VERSION")));
+    h.get_by_label_contains(&format!("中文版 0.1.1 · PrintCraft {}", env!("CARGO_PKG_VERSION")));
 }

@@ -45,7 +45,7 @@ impl PrintCraftApp {
 
 /// Returns `true` to close.
 pub(crate) fn body(ui: &mut egui::Ui, app: &mut PrintCraftApp, t: &Tokens) -> bool {
-    ui.label(egui::RichText::new("PDF/A").font(theme::semibold(18.0)));
+    ui.label(egui::RichText::new(crate::i18n::ui_tr(ui, "PDF/A")).font(theme::semibold(18.0)));
     ui.add_space(6.0);
     let declared = app.active_ids().and_then(|(_, id)| app.session.get(id)).map(|d| d.standards()).unwrap_or_default();
     let shown = declared.pdfa.as_ref().map_or("none".to_string(), |(p, c)| format!("PDF/A-{p}{}", c.to_lowercase()));
@@ -56,7 +56,7 @@ pub(crate) fn body(ui: &mut egui::Ui, app: &mut PrintCraftApp, t: &Tokens) -> bo
     ui.add_space(6.0);
     let before = app.pdfa.level;
     ui.horizontal(|ui| {
-        ui.label("Conformance level:");
+        ui.label(crate::i18n::ui_tr(ui, "Conformance level:"));
         egui::ComboBox::from_id_salt("pdfa-level").selected_text(app.pdfa.level.label()).show_ui(ui, |ui| {
             for l in [Level::A2b, Level::A3b] {
                 ui.selectable_value(&mut app.pdfa.level, l, l.label());
@@ -73,7 +73,7 @@ pub(crate) fn body(ui: &mut egui::Ui, app: &mut PrintCraftApp, t: &Tokens) -> bo
             ui.set_min_height(120.0);
             match &app.pdfa.issues {
                 None => {
-                    ui.label(egui::RichText::new("Verify to see what the document needs.").color(t.text_muted));
+                    ui.label(egui::RichText::new(crate::i18n::ui_tr(ui, "Verify to see what the document needs.")).color(t.text_muted));
                 }
                 Some(v) if v.is_empty() => {
                     ui.label(format!("No problems found: the document conforms to {}.", app.pdfa.level.label()));

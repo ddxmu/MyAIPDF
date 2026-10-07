@@ -12,6 +12,8 @@ workspace = true
 printcraft-engine = { workspace = true }
 printcraft-render = { workspace = true }
 printcraft-organize = { workspace = true }
+printcraft-ai = { workspace = true }
+printcraft-update = { workspace = true }
 serde_json = { workspace = true }
 png = "0.18"
 base64 = { version = "0.22", optional = true }

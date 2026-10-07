@@ -561,6 +561,7 @@ impl Host for crate::PrintCraftApp {
             "left_panel": if self.left_open { json!(format!("{:?}", self.left)) } else { Value::Null },
             "right_panel": self.right.map(|r| format!("{r:?}")),
             "dialog": self.dialog.map(|d| format!("{d:?}")),
+            "update_status": self.update_status(),
             "palette_open": self.palette_open,
             "theme": format!("{:?}", self.theme),
             "language": self.language,

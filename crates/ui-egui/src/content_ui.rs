@@ -289,7 +289,7 @@ pub(crate) fn editor(ctx: &egui::Context, view: &mut DocView, info: &DocInfo, ad
                     .desired_rows(1)
                     .background_color(Color32::from_rgba_unmultiplied(255, 255, 255, 235))
                     .text_color(Color32::from_rgb(cr, cg, cb))
-                    .hint_text("Type text")
+                    .hint_text(crate::i18n::ui_tr(ui, "Type text"))
                     .id_salt("added-text-edit"),
             );
             if t.focus {
@@ -365,10 +365,18 @@ pub(crate) fn format_panel(ui: &mut egui::Ui, t: &Tokens, style: &AddedText) -> 
         });
     });
     ui.horizontal(|ui| {
-        if ui.selectable_label(s.bold, egui::RichText::new("B").strong()).on_hover_text("Bold").clicked() {
+        if ui
+            .selectable_label(s.bold, egui::RichText::new(crate::i18n::ui_tr(ui, "B")).strong())
+            .on_hover_text(crate::i18n::ui_tr(ui, "Bold"))
+            .clicked()
+        {
             s.bold = !s.bold;
         }
-        if ui.selectable_label(s.italic, egui::RichText::new("I").italics()).on_hover_text("Italic").clicked() {
+        if ui
+            .selectable_label(s.italic, egui::RichText::new(crate::i18n::ui_tr(ui, "I")).italics())
+            .on_hover_text(crate::i18n::ui_tr(ui, "Italic"))
+            .clicked()
+        {
             s.italic = !s.italic;
         }
         ui.separator();
@@ -387,7 +395,9 @@ pub(crate) fn format_panel(ui: &mut egui::Ui, t: &Tokens, style: &AddedText) -> 
     if let Some(picked) = crate::comments::swatch_grid(ui, Some(c)) {
         s.color = picked;
     }
-    ui.label(egui::RichText::new("Standard fonts; text outside Windows-1252 isn't supported yet.").small().color(t.text_faint));
+    ui.label(
+        egui::RichText::new(crate::i18n::ui_tr(ui, "Standard fonts; text outside Windows-1252 isn't supported yet.")).small().color(t.text_faint),
+    );
     (s != *style).then_some(s)
 }
 
@@ -576,7 +586,7 @@ pub(crate) fn image_panel(ui: &mut egui::Ui, t: &Tokens, img: &printcraft_engine
             out = Some(ImageAction::Replace);
         }
     });
-    ui.label(egui::RichText::new("Crop (% trimmed from each side)").small().color(t.text_muted));
+    ui.label(egui::RichText::new(crate::i18n::ui_tr(ui, "Crop (% trimmed from each side)")).small().color(t.text_muted));
     let mut crop = img.crop.map(|v| (v * 100.0).round());
     let mut changed = false;
     ui.horizontal(|ui| {

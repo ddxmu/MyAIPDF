@@ -35,14 +35,14 @@ impl Default for OptimizeDraft {
 fn image_row(ui: &mut egui::Ui, id: &str, title: &str, s: &mut ImageSettings) {
     ui.label(egui::RichText::new(title).font(theme::semibold(13.0)));
     ui.horizontal(|ui| {
-        ui.checkbox(&mut s.downsample, "Bicubic downsampling to");
+        ui.checkbox(&mut s.downsample, crate::i18n::ui_tr(ui, "Bicubic downsampling to"));
         ui.add_enabled(s.downsample, egui::DragValue::new(&mut s.target_ppi).range(9.0..=2400.0).suffix(" ppi"));
-        ui.label("for images above");
+        ui.label(crate::i18n::ui_tr(ui, "for images above"));
         ui.add_enabled(s.downsample, egui::DragValue::new(&mut s.above_ppi).range(9.0..=2400.0).suffix(" ppi"));
     });
     s.above_ppi = s.above_ppi.max(s.target_ppi);
     ui.horizontal(|ui| {
-        ui.label("Compression");
+        ui.label(crate::i18n::ui_tr(ui, "Compression"));
         let label = match s.compression {
             Compression::Jpeg(_) => "JPEG",
             Compression::Flate => "ZIP",
@@ -53,12 +53,12 @@ fn image_row(ui: &mut egui::Ui, id: &str, title: &str, s: &mut ImageSettings) {
                 Compression::Jpeg(q) => q,
                 _ => 60,
             };
-            ui.selectable_value(&mut s.compression, Compression::Jpeg(q), "JPEG");
-            ui.selectable_value(&mut s.compression, Compression::Flate, "ZIP");
-            ui.selectable_value(&mut s.compression, Compression::Retain, "Retain existing");
+            ui.selectable_value(&mut s.compression, Compression::Jpeg(q), crate::i18n::ui_tr(ui, "JPEG"));
+            ui.selectable_value(&mut s.compression, Compression::Flate, crate::i18n::ui_tr(ui, "ZIP"));
+            ui.selectable_value(&mut s.compression, Compression::Retain, crate::i18n::ui_tr(ui, "Retain existing"));
         });
         if let Compression::Jpeg(q) = &mut s.compression {
-            ui.label("Quality");
+            ui.label(crate::i18n::ui_tr(ui, "Quality"));
             let name = QUALITIES.iter().min_by_key(|(_, v)| (*v as i32 - *q as i32).abs()).map_or("Medium", |(n, _)| n);
             egui::ComboBox::from_id_salt((id, "quality")).selected_text(name).show_ui(ui, |ui| {
                 for (n, v) in QUALITIES {
@@ -83,7 +83,7 @@ fn discard_box(ui: &mut egui::Ui, list: &mut Vec<Hidden>, h: Hidden, label: &str
 
 /// Draw the dialog; returns (ok, cancel).
 pub(crate) fn body(ui: &mut egui::Ui, d: &mut OptimizeDraft, t: &Tokens) -> (bool, bool) {
-    ui.label(egui::RichText::new("PDF Optimizer").font(theme::semibold(18.0)));
+    ui.label(egui::RichText::new(crate::i18n::ui_tr(ui, "PDF Optimizer")).font(theme::semibold(18.0)));
     ui.add_space(6.0);
     ui.horizontal(|ui| {
         for (tab, label) in [
@@ -105,17 +105,20 @@ pub(crate) fn body(ui: &mut egui::Ui, d: &mut OptimizeDraft, t: &Tokens) -> (boo
             image_row(ui, "color", "Color Images", &mut s.color);
             image_row(ui, "gray", "Grayscale Images", &mut s.gray);
             ui.label(
-                egui::RichText::new("Each image is measured where pages draw it; an image is replaced only if the result is smaller.")
-                    .small()
-                    .color(t.text_muted),
+                egui::RichText::new(crate::i18n::ui_tr(
+                    ui,
+                    "Each image is measured where pages draw it; an image is replaced only if the result is smaller.",
+                ))
+                .small()
+                .color(t.text_muted),
             );
         }
         OptimizeTab::DiscardObjects => {
             discard_box(ui, &mut d.discard, Hidden::LinksActionsScripts, "Discard all links, actions and JavaScript");
-            ui.checkbox(&mut s.discard_alternate_images, "Discard alternate images");
-            ui.checkbox(&mut s.discard_thumbnails, "Discard embedded page thumbnails");
-            ui.checkbox(&mut s.discard_tags, "Discard document tags");
-            ui.checkbox(&mut s.discard_print_settings, "Discard embedded print settings");
+            ui.checkbox(&mut s.discard_alternate_images, crate::i18n::ui_tr(ui, "Discard alternate images"));
+            ui.checkbox(&mut s.discard_thumbnails, crate::i18n::ui_tr(ui, "Discard embedded page thumbnails"));
+            ui.checkbox(&mut s.discard_tags, crate::i18n::ui_tr(ui, "Discard document tags"));
+            ui.checkbox(&mut s.discard_print_settings, crate::i18n::ui_tr(ui, "Discard embedded print settings"));
             discard_box(ui, &mut d.discard, Hidden::Bookmarks, "Discard bookmarks");
             discard_box(ui, &mut d.discard, Hidden::FormFields, "Flatten form fields");
             discard_box(ui, &mut d.discard, Hidden::HiddenLayers, "Discard hidden layer content");
@@ -128,9 +131,9 @@ pub(crate) fn body(ui: &mut egui::Ui, d: &mut OptimizeDraft, t: &Tokens) -> (boo
             discard_box(ui, &mut d.discard, Hidden::HiddenText, "Discard hidden text");
         }
         OptimizeTab::CleanUp => {
-            ui.checkbox(&mut s.flate_unencoded, "Use Flate to encode streams that are not encoded");
-            ui.checkbox(&mut s.remove_invalid_links, "Remove invalid links and bookmarks");
-            ui.checkbox(&mut s.remove_unreferenced_dests, "Remove unreferenced named destinations");
+            ui.checkbox(&mut s.flate_unencoded, crate::i18n::ui_tr(ui, "Use Flate to encode streams that are not encoded"));
+            ui.checkbox(&mut s.remove_invalid_links, crate::i18n::ui_tr(ui, "Remove invalid links and bookmarks"));
+            ui.checkbox(&mut s.remove_unreferenced_dests, crate::i18n::ui_tr(ui, "Remove unreferenced named destinations"));
             ui.add_enabled(false, egui::Checkbox::new(&mut true, "Compress document structure (object streams)"));
             ui.add_enabled(false, egui::Checkbox::new(&mut true, "Remove unused objects and merge identical ones"));
         }
@@ -155,7 +158,7 @@ pub(crate) fn body(ui: &mut egui::Ui, d: &mut OptimizeDraft, t: &Tokens) -> (boo
 
 /// Audit Space Usage: bytes and share of the file per kind of content.
 pub(crate) fn audit_body(ui: &mut egui::Ui, rows: &[printcraft_engine::optimize::SpaceUse], t: &Tokens) -> bool {
-    ui.label(egui::RichText::new("Space Audit").font(crate::theme::semibold(18.0)));
+    ui.label(egui::RichText::new(crate::i18n::ui_tr(ui, "Space Audit")).font(crate::theme::semibold(18.0)));
     ui.add_space(8.0);
     egui::Grid::new("space-audit").num_columns(3).striped(true).spacing([24.0, 4.0]).show(ui, |ui| {
         for h in ["Description", "Bytes", "Percentage"] {
@@ -169,9 +172,9 @@ pub(crate) fn audit_body(ui: &mut egui::Ui, rows: &[printcraft_engine::optimize:
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| ui.label(format!("{:.2}%", r.percent)));
             ui.end_row();
         }
-        ui.label(egui::RichText::new("Total").strong());
+        ui.label(egui::RichText::new(crate::i18n::ui_tr(ui, "Total")).strong());
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| ui.label(egui::RichText::new(total.to_string()).strong()));
-        ui.with_layout(Layout::right_to_left(Align::Center), |ui| ui.label(egui::RichText::new("100.00%").strong()));
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| ui.label(egui::RichText::new(crate::i18n::ui_tr(ui, "100.00%")).strong()));
         ui.end_row();
     });
     ui.add_space(12.0);

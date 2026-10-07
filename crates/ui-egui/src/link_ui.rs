@@ -189,16 +189,16 @@ pub(crate) fn body(ui: &mut egui::Ui, d: &mut LinkDraft, pages: usize, t: &Token
     ui.add_space(8.0);
     widgets::section_title(ui, "Link Appearance");
     egui::Grid::new("link-appearance").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
-        ui.label("Link Type:");
+        ui.label(crate::i18n::ui_tr(ui, "Link Type:"));
         egui::ComboBox::from_id_salt("link-type").selected_text(if d.style.visible { "Visible Rectangle" } else { "Invisible Rectangle" }).show_ui(
             ui,
             |ui| {
-                ui.selectable_value(&mut d.style.visible, true, "Visible Rectangle");
-                ui.selectable_value(&mut d.style.visible, false, "Invisible Rectangle");
+                ui.selectable_value(&mut d.style.visible, true, crate::i18n::ui_tr(ui, "Visible Rectangle"));
+                ui.selectable_value(&mut d.style.visible, false, crate::i18n::ui_tr(ui, "Invisible Rectangle"));
             },
         );
         ui.end_row();
-        ui.label("Highlight Style:");
+        ui.label(crate::i18n::ui_tr(ui, "Highlight Style:"));
         egui::ComboBox::from_id_salt("link-hl").selected_text(d.style.highlight.label()).show_ui(ui, |ui| {
             for h in LinkHighlight::ALL {
                 ui.selectable_value(&mut d.style.highlight, h, h.label());
@@ -206,7 +206,7 @@ pub(crate) fn body(ui: &mut egui::Ui, d: &mut LinkDraft, pages: usize, t: &Token
         });
         ui.end_row();
         if d.style.visible {
-            ui.label("Line Thickness:");
+            ui.label(crate::i18n::ui_tr(ui, "Line Thickness:"));
             egui::ComboBox::from_id_salt("link-w")
                 .selected_text(if d.style.width <= 1.0 {
                     "Thin"
@@ -216,12 +216,12 @@ pub(crate) fn body(ui: &mut egui::Ui, d: &mut LinkDraft, pages: usize, t: &Token
                     "Thick"
                 })
                 .show_ui(ui, |ui| {
-                    ui.selectable_value(&mut d.style.width, 1.0, "Thin");
-                    ui.selectable_value(&mut d.style.width, 2.0, "Medium");
-                    ui.selectable_value(&mut d.style.width, 3.0, "Thick");
+                    ui.selectable_value(&mut d.style.width, 1.0, crate::i18n::ui_tr(ui, "Thin"));
+                    ui.selectable_value(&mut d.style.width, 2.0, crate::i18n::ui_tr(ui, "Medium"));
+                    ui.selectable_value(&mut d.style.width, 3.0, crate::i18n::ui_tr(ui, "Thick"));
                 });
             ui.end_row();
-            ui.label("Line Style:");
+            ui.label(crate::i18n::ui_tr(ui, "Line Style:"));
             let mut style = if d.style.dashed {
                 1
             } else if d.style.underline {
@@ -237,7 +237,7 @@ pub(crate) fn body(ui: &mut egui::Ui, d: &mut LinkDraft, pages: usize, t: &Token
             d.style.dashed = style == 1;
             d.style.underline = style == 2;
             ui.end_row();
-            ui.label("Color:");
+            ui.label(crate::i18n::ui_tr(ui, "Color:"));
             if let Some(c) = crate::comments::swatch_grid(ui, Some(d.style.color)) {
                 d.style.color = c;
             }
@@ -246,25 +246,25 @@ pub(crate) fn body(ui: &mut egui::Ui, d: &mut LinkDraft, pages: usize, t: &Token
     });
     ui.add_space(8.0);
     widgets::section_title(ui, "Link Action");
-    ui.radio_value(&mut d.web, true, "Open a web page");
+    ui.radio_value(&mut d.web, true, crate::i18n::ui_tr(ui, "Open a web page"));
     ui.add_enabled_ui(d.web, |ui| {
         ui.horizontal(|ui| {
             ui.add_space(24.0);
-            ui.add(egui::TextEdit::singleline(&mut d.url).desired_width(360.0).hint_text("https://example.org"));
+            ui.add(egui::TextEdit::singleline(&mut d.url).desired_width(360.0).hint_text(crate::i18n::ui_tr(ui, "https://example.org")));
         });
     });
-    ui.radio_value(&mut d.web, false, "Go to a page view");
+    ui.radio_value(&mut d.web, false, crate::i18n::ui_tr(ui, "Go to a page view"));
     ui.add_enabled_ui(!d.web, |ui| {
         ui.horizontal(|ui| {
             ui.add_space(24.0);
-            ui.label("Page");
+            ui.label(crate::i18n::ui_tr(ui, "Page"));
             ui.add(egui::DragValue::new(&mut d.target).range(1..=pages.max(1)));
             ui.label(format!("of {pages}"));
         });
     });
     let ok = !d.web || (d.url.trim().len() > 3 && d.url.trim() != "https://");
     if !ok {
-        ui.label(egui::RichText::new("Type the web address.").small().color(t.text_faint));
+        ui.label(egui::RichText::new(crate::i18n::ui_tr(ui, "Type the web address.")).small().color(t.text_faint));
     }
     ui.add_space(12.0);
     let (mut a, mut c) = (false, false);

@@ -70,6 +70,7 @@ pub const TABLE: &[(&str, Class)] = &[
     ("print", Class::Layer(4)),
     ("media", Class::Layer(4)),
     ("ai", Class::Layer(4)),
+    ("update", Class::Layer(4)),
     // L5 interaction
     ("viewport", Class::Layer(5)),
     ("tools", Class::Layer(5)),
@@ -80,6 +81,7 @@ pub const TABLE: &[(&str, Class)] = &[
     ("ui-common", Class::Layer(7)),
     ("ui-egui", Class::Layer(7)),
     ("automation", Class::Layer(7)),
+    ("ai", Class::Layer(6)),
     // test support
     ("testkit", Class::Testkit),
     ("oracle", Class::Testkit),
@@ -88,6 +90,7 @@ pub const TABLE: &[(&str, Class)] = &[
     ("cli", Class::Exempt),
     ("web", Class::Exempt),
     ("xtask", Class::Exempt),
+    ("myaipdf-updater", Class::Exempt),
 ];
 
 /// Workspace crates a standalone crate may use (architecture §3 rule 3: `cos → filters, crypt, geom`).
@@ -102,6 +105,7 @@ pub const SIDEWAYS: &[(&str, &str)] = &[
     ("sign", "security"),
     ("ui-egui", "ui-common"),
     ("ui-egui", "platform"),
+    ("ui-egui", "automation"),
     ("automation", "platform"),
 ];
 

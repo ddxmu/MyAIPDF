@@ -12,6 +12,9 @@ workspace = true
 printcraft-fonts = { workspace = true }
 printcraft-engine = { workspace = true }
 printcraft-render = { workspace = true }
+printcraft-ai = { workspace = true }
+printcraft-update = { workspace = true }
+printcraft-automation = { workspace = true }
 egui = { workspace = true }
 egui_extras = { workspace = true }
 eframe = { workspace = true, features = ["default_fonts", "wgpu", "accesskit", "persistence", "links"] }

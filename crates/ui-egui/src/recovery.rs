@@ -46,7 +46,7 @@ impl RecoveryStore {
     pub fn default_dir() -> Option<PathBuf> {
         let env = |k: &str| std::env::var_os(k).filter(|v| !v.is_empty()).map(PathBuf::from);
         if cfg!(target_os = "macos") {
-            env("HOME").map(|h| h.join("Library/Application Support/PrintCraft/Recovery"))
+            env("HOME").map(|h| h.join("Library/Application Support/MyAIPDF/Recovery"))
         } else if cfg!(windows) {
             env("LOCALAPPDATA").map(|d| d.join("PrintCraft").join("Recovery"))
         } else {

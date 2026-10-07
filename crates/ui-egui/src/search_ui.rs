@@ -14,9 +14,14 @@ pub(crate) fn panel(ui: &mut egui::Ui, t: &Tokens, view: &mut DocView, pages: us
     let searched = view.texts.len() + view.text_failed.len();
     let Some(find) = view.find.as_mut() else { return };
     find.in_panel = true;
-    let l = ui.label(egui::RichText::new("What word or phrase would you like to search for?").color(t.text_muted));
+    let l = ui.label(egui::RichText::new(crate::i18n::ui_tr(ui, "What word or phrase would you like to search for?")).color(t.text_muted));
     let r = ui
-        .add(egui::TextEdit::singleline(&mut find.query).id(egui::Id::new("search-panel-input")).hint_text("Search").desired_width(f32::INFINITY))
+        .add(
+            egui::TextEdit::singleline(&mut find.query)
+                .id(egui::Id::new("search-panel-input"))
+                .hint_text(crate::i18n::ui_tr(ui, "Search"))
+                .desired_width(f32::INFINITY),
+        )
         .labelled_by(l.id);
     if find.focus {
         r.request_focus();
@@ -27,8 +32,8 @@ pub(crate) fn panel(ui: &mut egui::Ui, t: &Tokens, view: &mut DocView, pages: us
         let w = &mut ui.visuals_mut().widgets;
         w.inactive.bg_stroke = egui::Stroke::new(1.0, t.border);
         w.inactive.bg_fill = t.hover;
-        let a = ui.checkbox(&mut find.whole_words, "Whole words only").changed();
-        let b = ui.checkbox(&mut find.case_sensitive, "Case-sensitive").changed();
+        let a = ui.checkbox(&mut find.whole_words, crate::i18n::ui_tr(ui, "Whole words only")).changed();
+        let b = ui.checkbox(&mut find.case_sensitive, crate::i18n::ui_tr(ui, "Case-sensitive")).changed();
         if a || b {
             find.case_query.clear();
         }
@@ -80,7 +85,7 @@ pub(crate) fn panel(ui: &mut egui::Ui, t: &Tokens, view: &mut DocView, pages: us
         job.append(&format!(" {}…", flat(after)), 0.0, plain);
         job.wrap.max_width = ui.available_width();
         let selected = find.current == Some(i);
-        let resp = ui.add(egui::Button::selectable(selected, job).wrap()).on_hover_text("Go to this result");
+        let resp = ui.add(egui::Button::selectable(selected, job).wrap()).on_hover_text(crate::i18n::ui_tr(ui, "Go to this result"));
         if resp.clicked() {
             go = Some(i);
         }

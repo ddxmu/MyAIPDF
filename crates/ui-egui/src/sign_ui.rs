@@ -378,7 +378,7 @@ fn error(ui: &mut egui::Ui, err: &Option<String>) {
 
 fn choose(ui: &mut egui::Ui, app: &mut PrintCraftApp, t: &Tokens) -> bool {
     title(ui, "Sign with a Digital ID");
-    ui.label("Choose the digital ID that you want to use for signing:");
+    ui.label(crate::i18n::ui_tr(ui, "Choose the digital ID that you want to use for signing:"));
     ui.add_space(6.0);
     let ids = app.digital_ids.clone();
     let Some(d) = app.sign_draft.as_mut() else { return true };
@@ -414,7 +414,7 @@ fn choose(ui: &mut egui::Ui, app: &mut PrintCraftApp, t: &Tokens) -> bool {
             }
         }
         if ids.is_empty() {
-            ui.label(egui::RichText::new("No digital IDs yet.").color(t.text_muted));
+            ui.label(egui::RichText::new(crate::i18n::ui_tr(ui, "No digital IDs yet.")).color(t.text_muted));
         }
     });
     ui.add_space(10.0);
@@ -441,8 +441,8 @@ fn configure(ui: &mut egui::Ui, app: &mut PrintCraftApp, t: &Tokens) -> bool {
     let Some(d) = app.sign_draft.as_mut() else { return true };
     let mut close = false;
     let mut go = false;
-    ui.radio_value(&mut d.new_id.create, false, "Use a Digital ID from a file");
-    ui.radio_value(&mut d.new_id.create, true, "Create a new Digital ID (self-signed, saved to a password-protected file)");
+    ui.radio_value(&mut d.new_id.create, false, crate::i18n::ui_tr(ui, "Use a Digital ID from a file"));
+    ui.radio_value(&mut d.new_id.create, true, crate::i18n::ui_tr(ui, "Create a new Digital ID (self-signed, saved to a password-protected file)"));
     ui.add_space(8.0);
     let n = &mut d.new_id;
     if n.create {
@@ -457,42 +457,46 @@ fn configure(ui: &mut egui::Ui, app: &mut PrintCraftApp, t: &Tokens) -> bool {
                 ui.add(egui::TextEdit::singleline(value).desired_width(260.0)).labelled_by(l.id);
                 ui.end_row();
             }
-            let l = ui.label("Country/Region");
-            ui.add(egui::TextEdit::singleline(&mut n.country).hint_text("US").char_limit(2).desired_width(60.0)).labelled_by(l.id);
+            let l = ui.label(crate::i18n::ui_tr(ui, "Country/Region"));
+            ui.add(egui::TextEdit::singleline(&mut n.country).hint_text(crate::i18n::ui_tr(ui, "US")).char_limit(2).desired_width(60.0))
+                .labelled_by(l.id);
             ui.end_row();
-            ui.label("Key Algorithm");
+            ui.label(crate::i18n::ui_tr(ui, "Key Algorithm"));
             egui::ComboBox::from_id_salt("key-alg").selected_text(KEY_ALGORITHMS[n.key].0).show_ui(ui, |ui| {
                 for (i, (label, _)) in KEY_ALGORITHMS.iter().enumerate() {
                     ui.selectable_value(&mut n.key, i, *label);
                 }
             });
             ui.end_row();
-            let l = ui.label("Password");
+            let l = ui.label(crate::i18n::ui_tr(ui, "Password"));
             ui.add(egui::TextEdit::singleline(&mut n.password).password(true).desired_width(200.0)).labelled_by(l.id);
             ui.end_row();
-            let l = ui.label("Confirm Password");
+            let l = ui.label(crate::i18n::ui_tr(ui, "Confirm Password"));
             ui.add(egui::TextEdit::singleline(&mut n.confirm).password(true).desired_width(200.0)).labelled_by(l.id);
             ui.end_row();
         });
         ui.label(
-            egui::RichText::new("Valid for 5 years, for digital signatures. Self-signed IDs are usually not trusted by others.")
-                .small()
-                .color(t.text_muted),
+            egui::RichText::new(crate::i18n::ui_tr(
+                ui,
+                "Valid for 5 years, for digital signatures. Self-signed IDs are usually not trusted by others.",
+            ))
+            .small()
+            .color(t.text_muted),
         );
     } else {
         egui::Grid::new("id-file").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
-            let l = ui.label("File (.p12, .pfx)");
+            let l = ui.label(crate::i18n::ui_tr(ui, "File (.p12, .pfx)"));
             ui.horizontal(|ui| {
                 ui.add(egui::TextEdit::singleline(&mut n.file).desired_width(220.0)).labelled_by(l.id);
                 #[cfg(not(target_arch = "wasm32"))]
-                if ui.button("Browse…").clicked()
+                if ui.button(crate::i18n::ui_tr(ui, "Browse…")).clicked()
                     && let Some(p) = rfd::FileDialog::new().add_filter("Digital ID", &["p12", "pfx"]).pick_file()
                 {
                     n.file = p.to_string_lossy().into_owned();
                 }
             });
             ui.end_row();
-            let l = ui.label("Password");
+            let l = ui.label(crate::i18n::ui_tr(ui, "Password"));
             ui.add(egui::TextEdit::singleline(&mut n.file_password).password(true).desired_width(200.0)).labelled_by(l.id);
             ui.end_row();
         });
@@ -572,24 +576,24 @@ fn sign_as(ui: &mut egui::Ui, app: &mut PrintCraftApp, t: &Tokens) -> bool {
     let mut close = false;
     let mut go = false;
     if d.rect.is_some() || d.field.is_some() {
-        ui.label(egui::RichText::new("Appearance").font(theme::semibold(12.5)));
+        ui.label(egui::RichText::new(crate::i18n::ui_tr(ui, "Appearance")).font(theme::semibold(12.5)));
         preview(ui, t, &entry.name, d);
         ui.horizontal_wrapped(|ui| {
             let a = &mut d.appearance;
-            ui.checkbox(&mut a.name, "Name");
-            ui.checkbox(&mut a.date, "Date");
-            ui.checkbox(&mut a.reason, "Reason");
-            ui.checkbox(&mut a.location, "Location");
-            ui.checkbox(&mut a.distinguished_name, "Distinguished name");
-            ui.checkbox(&mut a.labels, "Labels");
+            ui.checkbox(&mut a.name, crate::i18n::ui_tr(ui, "Name"));
+            ui.checkbox(&mut a.date, crate::i18n::ui_tr(ui, "Date"));
+            ui.checkbox(&mut a.reason, crate::i18n::ui_tr(ui, "Reason"));
+            ui.checkbox(&mut a.location, crate::i18n::ui_tr(ui, "Location"));
+            ui.checkbox(&mut a.distinguished_name, crate::i18n::ui_tr(ui, "Distinguished name"));
+            ui.checkbox(&mut a.labels, crate::i18n::ui_tr(ui, "Labels"));
         });
         ui.add_space(6.0);
     } else {
-        ui.label(egui::RichText::new("The signature will be invisible.").color(t.text_muted));
+        ui.label(egui::RichText::new(crate::i18n::ui_tr(ui, "The signature will be invisible.")).color(t.text_muted));
     }
     egui::Grid::new("sign-as").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
         if d.certify.is_some() {
-            ui.label("Permitted actions after certifying");
+            ui.label(crate::i18n::ui_tr(ui, "Permitted actions after certifying"));
             let mut p = d.certify.unwrap_or(2);
             let label = |p: u8| match p {
                 1 => "No changes allowed",
@@ -604,19 +608,21 @@ fn sign_as(ui: &mut egui::Ui, app: &mut PrintCraftApp, t: &Tokens) -> bool {
             d.certify = Some(p);
             ui.end_row();
         }
-        let l = ui.label("Reason");
-        ui.add(egui::TextEdit::singleline(&mut d.reason).hint_text("Optional").desired_width(260.0)).labelled_by(l.id);
+        let l = ui.label(crate::i18n::ui_tr(ui, "Reason"));
+        ui.add(egui::TextEdit::singleline(&mut d.reason).hint_text(crate::i18n::ui_tr(ui, "Optional")).desired_width(260.0)).labelled_by(l.id);
         ui.end_row();
-        let l = ui.label("Location");
-        ui.add(egui::TextEdit::singleline(&mut d.location).hint_text("Optional").desired_width(260.0)).labelled_by(l.id);
+        let l = ui.label(crate::i18n::ui_tr(ui, "Location"));
+        ui.add(egui::TextEdit::singleline(&mut d.location).hint_text(crate::i18n::ui_tr(ui, "Optional")).desired_width(260.0)).labelled_by(l.id);
         ui.end_row();
         if in_keychain {
-            ui.label("");
+            ui.label(crate::i18n::ui_tr(ui, ""));
             ui.label(
-                egui::RichText::new("The key is in the macOS Keychain, which may ask to allow PrintCraft to use it.").small().color(t.text_muted),
+                egui::RichText::new(crate::i18n::ui_tr(ui, "The key is in the macOS Keychain, which may ask to allow PrintCraft to use it."))
+                    .small()
+                    .color(t.text_muted),
             );
         } else {
-            let l = ui.label("Digital ID password");
+            let l = ui.label(crate::i18n::ui_tr(ui, "Digital ID password"));
             let r = ui.add(egui::TextEdit::singleline(&mut d.password).password(true).desired_width(200.0)).labelled_by(l.id);
             if r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                 go = true;
@@ -719,7 +725,7 @@ pub(crate) fn panel(ui: &mut egui::Ui, t: &Tokens, sigs: &[SignatureInfo], expan
         ui.vertical_centered(|ui| {
             ui.add(icons::image("signature", 32.0, t.text_faint));
             ui.add_space(6.0);
-            ui.label(egui::RichText::new("This document has no signatures.").color(t.text_muted));
+            ui.label(egui::RichText::new(crate::i18n::ui_tr(ui, "This document has no signatures.")).color(t.text_muted));
         });
         return action;
     }
@@ -777,7 +783,7 @@ pub(crate) fn panel(ui: &mut egui::Ui, t: &Tokens, sigs: &[SignatureInfo], expan
                 ui.add(egui::Label::new(egui::RichText::new(format!("• {line}")).font(theme::regular(11.5)).color(t.text_muted)).wrap());
             }
             ui.add_space(4.0);
-            ui.label(egui::RichText::new("Signature Details").font(theme::semibold(12.0)));
+            ui.label(egui::RichText::new(crate::i18n::ui_tr(ui, "Signature Details")).font(theme::semibold(12.0)));
             let row = |ui: &mut egui::Ui, k: &str, v: &str| {
                 ui.add(egui::Label::new(egui::RichText::new(format!("{k}: {v}")).font(theme::regular(11.5))).wrap());
             };
@@ -819,22 +825,22 @@ pub(crate) fn panel(ui: &mut egui::Ui, t: &Tokens, sigs: &[SignatureInfo], expan
             ui.horizontal_wrapped(|ui| {
                 if let Some(c) = s.chain.last().or(s.certificate.as_ref())
                     && s.status == SignatureStatus::Unknown
-                    && ui.button("Add to trusted certificates").clicked()
+                    && ui.button(crate::i18n::ui_tr(ui, "Add to trusted certificates")).clicked()
                 {
                     action = Some(PanelAction::Trust(Box::new(c.clone())));
                 }
-                if ui.button("View signed version").clicked() {
+                if ui.button(crate::i18n::ui_tr(ui, "View signed version")).clicked() {
                     action = Some(PanelAction::ViewSigned(s.signed_len));
                 }
                 if let Some(c) = &s.certificate
-                    && ui.button("Show certificate…").clicked()
+                    && ui.button(crate::i18n::ui_tr(ui, "Show certificate…")).clicked()
                 {
                     let mut chain = vec![c.clone()];
                     chain.extend(s.chain.iter().filter(|x| x.raw != c.raw).cloned());
                     action = Some(PanelAction::ViewCertificate(chain));
                 }
                 if let Some(c) = &s.certificate
-                    && ui.button("Export certificate…").clicked()
+                    && ui.button(crate::i18n::ui_tr(ui, "Export certificate…")).clicked()
                 {
                     action = Some(PanelAction::ExportCertificate(Box::new(c.clone())));
                 }
@@ -888,7 +894,7 @@ pub(crate) enum CertAction {
 /// The Certificate Viewer dialog: the chain on the left, the selected certificate's tabs.
 pub(crate) fn cert_viewer(ui: &mut egui::Ui, v: &mut CertViewer, trusted: &[Certificate], t: &Tokens) -> (bool, Option<CertAction>) {
     title(ui, "Certificate Viewer");
-    ui.label(egui::RichText::new("This dialog shows the details of a certificate and its chain.").color(t.text_muted));
+    ui.label(egui::RichText::new(crate::i18n::ui_tr(ui, "This dialog shows the details of a certificate and its chain.")).color(t.text_muted));
     ui.add_space(8.0);
     let mut action = None;
     v.selected = v.selected.min(v.chain.len().saturating_sub(1));

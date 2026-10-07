@@ -34,6 +34,8 @@ env:
 jobs:
   version:
     name: version
+    # Upstream multi-platform signing pipeline is not the MyAIPDF distribution pipeline.
+    if: github.repository == 'storytold/printcraft'
     runs-on: ubuntu-latest
     environment: release
     outputs:

@@ -9,6 +9,7 @@
 
 mod a11y_ui;
 mod actions_ui;
+pub mod ai_ui;
 pub mod canvas;
 mod chrome;
 mod combine_ui;
@@ -58,6 +59,7 @@ pub use print_ui::{Handling as PrintHandling, PrintDraft, Which as PrintWhich};
 mod redact_ui;
 pub use redact_ui::{HiddenDraft, PagesDraft as RedactPagesDraft, RedactPrefs, SearchDraft as RedactSearchDraft};
 pub mod i18n;
+mod zh;
 
 /// The longest author name kept (Preferences ▸ Identity, restored settings).
 pub(crate) const MAX_AUTHOR_CHARS: usize = 200;
@@ -296,11 +298,14 @@ pub struct PrintCraftApp {
     pub comment_prefs: comments::CommentPrefs,
     pub theme: ThemeKind,
     pub language: i18n::Language,
+    pub ai: ai_ui::State,
     /// Follow the operating system's light/dark setting.
     pub follow_system_theme: bool,
     pub dialog: Option<Dialog>,
     /// How to ask for the latest release (the desktop app sets it; see `updates`).
     pub update_source: Option<updates::UpdateSource>,
+    pub update_downloader: Option<updates::DownloadSource>,
+    pub update_installer: Option<updates::InstallSource>,
     pub(crate) updates: updates::Updates,
     pub palette_open: bool,
     pub palette_query: String,
@@ -472,9 +477,12 @@ impl PrintCraftApp {
             comment_prefs: Default::default(),
             theme: ThemeKind::Light,
             language: i18n::Language::default(),
+            ai: Default::default(),
             follow_system_theme: false,
             dialog: None,
             update_source: None,
+            update_downloader: None,
+            update_installer: None,
             updates: updates::Updates::default(),
             palette_open: false,
             palette_query: String::new(),
@@ -843,6 +851,7 @@ impl PrintCraftApp {
             "recent": self.recent,
             "theme": self.theme,
             "language": self.language,
+            "ai": self.ai.preferences,
             "author": self.comment_prefs.author,
             // Drawn signatures keep their original form (older settings read the same).
             "signature": match &self.signature { Some(fill_sign::SavedSig::Drawn(s)) => Some(s), _ => None },
@@ -861,6 +870,7 @@ impl PrintCraftApp {
     /// Restore state written by `persist`. Unknown or malformed data is ignored.
     pub fn restore(&mut self, json: &str) {
         let Ok(v) = serde_json::from_str::<serde_json::Value>(json) else { return };
+        self.ai.restore(&v["ai"]);
         if let Ok(r) = serde_json::from_value::<Vec<RecentFile>>(v["recent"].clone()) {
             // Only keep entries whose files still exist.
             #[cfg(not(target_arch = "wasm32"))]
@@ -915,7 +925,7 @@ impl PrintCraftApp {
         let view = self.active.and_then(|i| self.views.get_mut(i));
         match (key, view) {
             ("language", _) => {
-                self.language = i18n::Language::parse(value).ok_or("language must be en or ja")?;
+                self.language = i18n::Language::parse(value).ok_or("language must be zh, en or ja")?;
             }
             ("theme", _) => {
                 self.follow_system_theme = value == "system";
@@ -1128,6 +1138,8 @@ impl eframe::App for PrintCraftApp {
 
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.ctx = Some(ctx.clone());
+        ctx.data_mut(|d| d.insert_temp(egui::Id::new("myaipdf-language"), self.language));
+        self.poll_ai();
         if !self.styled {
             egui_extras::install_image_loaders(ctx);
             theme::install_fonts(ctx);
@@ -1201,7 +1213,7 @@ impl eframe::App for PrintCraftApp {
         let title = self
             .active
             .and_then(|i| self.session.get(self.views[i].id))
-            .map_or_else(|| "PrintCraft".to_owned(), |d| format!("{} — PrintCraft", d.display_name()));
+            .map_or_else(|| "MyAIPDF".to_owned(), |d| format!("{} — MyAIPDF", d.display_name()));
         if title != self.window_title {
             ctx.send_viewport_cmd(egui::ViewportCommand::Title(title.clone()));
             self.window_title = title;

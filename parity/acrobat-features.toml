@@ -1693,9 +1693,9 @@ tier = "P2"
 milestone = "M3"
 status = "partial"
 commands = ["help.check_updates"]
-tools = []
-evidence = ["crates/ui-egui/tests/updates.rs::a_newer_release_is_offered_for_download", "crates/ui-egui/tests/updates.rs::nothing_is_asked_until_the_user_checks", "apps/printcraft/src/updates.rs::answers_are_read_and_only_our_release_pages_are_offered"]
-notes = "asks GitHub Releases on request and offers the release page. By the owner's decision there is no check at start and no in-place install (Acrobat has both)"
+tools = ["update_check", "update_download", "update_install"]
+evidence = ["crates/ui-egui/tests/updates.rs::about_contains_update_controls_and_confirmed_install", "crates/ui-egui/tests/updates.rs::nothing_is_asked_until_the_user_checks", "crates/update/src/tests.rs::answers_are_read_and_only_our_stable_release_is_offered", "crates/automation/tests/automation.rs::update_install_requires_confirmation_root_and_saved_documents"]
+notes = "MyAIPDF fork: manual stable-release checks for ddxmu/MyAIPDF, SHA-256 verified downloads, confirmed macOS install with backup and saved-document guard. No startup checks. Not upstream PrintCraft releases."
 
 [[feature]]
 id = "view.single-key-accelerators"

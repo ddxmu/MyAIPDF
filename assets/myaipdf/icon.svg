@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <title>MyAIPDF — DPF</title>
+  <defs>
+    <linearGradient id="bg" x1="0.15" y1="0" x2="0.85" y2="1">
+      <stop stop-color="#FF5478"/>
+      <stop offset="0.48" stop-color="#DC3A99"/>
+      <stop offset="1" stop-color="#813CEC"/>
+    </linearGradient>
+    <linearGradient id="gloss" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#FFFFFF" stop-opacity="0.20"/>
+      <stop offset="0.5" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect x="64" y="72" width="896" height="896" rx="220" fill="#84257D" opacity="0.22"/>
+  <rect x="64" y="64" width="896" height="896" rx="220" fill="url(#bg)"/>
+  <rect x="68" y="68" width="888" height="888" rx="216" fill="url(#gloss)" stroke="#FFFFFF" stroke-opacity="0.14" stroke-width="4"/>
+  <!-- Original geometric letterforms, outlined so no font dependency is needed. -->
+  <g fill="#FFFFFF" fill-rule="evenodd" transform="translate(-44 0)">
+    <path d="M244 338h72c98 0 153 62 153 174s-55 174-153 174h-72a22 22 0 0 1-22-22V360a22 22 0 0 1 22-22Zm43 64v220h30c55 0 86-37 86-110s-31-110-86-110Z"/>
+    <path d="M494 338h102c75 0 120 41 120 112s-45 112-120 112h-38v102a22 22 0 0 1-22 22h-20a22 22 0 0 1-22-22Zm64 64v96h36c39 0 59-16 59-48s-20-48-59-48Z"/>
+    <path d="M747 338h121a22 22 0 0 1 22 22v20a22 22 0 0 1-22 22h-79v78h66a22 22 0 0 1 22 22v20a22 22 0 0 1-22 22h-66v120a22 22 0 0 1-22 22h-20a22 22 0 0 1-22-22V360a22 22 0 0 1 22-22Z"/>
+  </g>
+</svg>

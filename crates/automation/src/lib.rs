@@ -98,6 +98,69 @@ impl Automation {
         Self { session: Session::new(), root: None, renderers: HashMap::new(), texts: HashMap::new() }
     }
 
+    /// Temporarily adapt the live editor session to the same validated headless tools.
+    pub fn from_session(session: Session) -> Self {
+        Self { session, root: None, renderers: HashMap::new(), texts: HashMap::new() }
+    }
+
+    pub fn into_session(self) -> Session {
+        self.session
+    }
+
+    /// Schemas exposed to MyAIPDF's model; no file, shell, JavaScript, save or external URL tools.
+    pub fn ai_tools() -> Value {
+        Value::Array(
+            tools::tools()
+                .into_iter()
+                .filter(|t| printcraft_ai::ALLOWED_TOOLS.contains(&t.name))
+                .map(|t| {
+                    let mut schema = t.input_schema;
+                    if let Some(p) = schema.get_mut("properties").and_then(Value::as_object_mut) {
+                        for k in ["doc", "path", "out", "file"] {
+                            p.remove(k);
+                        }
+                    }
+                    if let Some(r) = schema.get_mut("required").and_then(Value::as_array_mut) {
+                        r.retain(|k| k.as_str() != Some("doc"));
+                    }
+                    json!({"name":t.name,"description":t.description,"parameters":schema})
+                })
+                .collect(),
+        )
+    }
+
+    /// Validate all schemas before applying. Commit as one undo step, or restore on failure.
+    /// This never saves: the user sees dirty/undoable edits and chooses Save or Save As.
+    pub fn apply_ai_plan(&mut self, id: DocId, actions: &[printcraft_ai::Action]) -> Result<()> {
+        if actions.is_empty() || actions.len() > 12 {
+            return Err(failed("AI 方案必须包含 1 至 12 个操作"));
+        }
+        let mut ready = Vec::new();
+        for action in actions {
+            action.validate().map_err(failed)?;
+            let mut args = action.args.clone();
+            args.as_object_mut().ok_or_else(|| failed("AI 参数必须是对象"))?.insert("doc".into(), json!(id.0));
+            let def = tools::find(&action.tool).ok_or_else(|| failed("未知 AI 操作"))?;
+            tools::check_args(def, &args)?;
+            ready.push((&action.tool, args));
+        }
+        let result = self.session.atomic_edits(id, "AI PDF 修改", |session| {
+            let mut adapter = Self::from_session(std::mem::take(session));
+            let result = printcraft_engine::guard(|| {
+                for (tool, args) in &ready {
+                    adapter.call(tool, args).map_err(|e| e.to_string())?;
+                }
+                Ok(())
+            })
+            .and_then(|r| r);
+            *session = adapter.into_session();
+            result
+        });
+        self.renderers.remove(&id);
+        self.texts.remove(&id);
+        result.map_err(|e| failed(format!("AI 操作未完成，已回退本次改动：{e}")))
+    }
+
     /// Confine every path the tools read or write to `root` (relative paths resolve inside it).
     pub fn with_root(mut self, root: impl Into<PathBuf>) -> std::io::Result<Self> {
         self.root = Some(root.into().canonicalize()?);
@@ -125,6 +188,50 @@ impl Automation {
         tools::check_args(def, args)?;
         let a = Args(args);
         let out = match name {
+            "update_check" => serde_json::to_value(printcraft_update::check_latest().map_err(failed)?).map_err(failed)?,
+            "update_download" => {
+                let parent = self.resolve(a.str("out_dir")?, true)?;
+                if !parent.is_dir() {
+                    return Err(failed("out_dir must be an existing directory"));
+                }
+                let release = printcraft_update::check_latest().map_err(failed)?;
+                let directory = printcraft_update::private_directory(&parent).map_err(failed)?;
+                serde_json::to_value(printcraft_update::download(&release, &directory, |_, _| {}).map_err(failed)?).map_err(failed)?
+            }
+            "update_install" => {
+                if args["confirm"].as_bool() != Some(true) {
+                    return Err(failed("Installing an update requires confirm:true"));
+                }
+                if self.session.docs().iter().any(|d| d.dirty) {
+                    return Err(failed("Save all unsaved PDF documents before installing an update"));
+                }
+                let package = printcraft_update::Package {
+                    path: self.resolve(a.str("path")?, false)?,
+                    version: a.str("version")?.into(),
+                    sha256: a.str("sha256")?.into(),
+                    size: args["size"].as_u64().ok_or_else(|| failed("size must be a positive integer"))?,
+                };
+                let application = self.resolve(a.str("application")?, true)?;
+                let application = if application.is_absolute() { application } else { std::env::current_dir().map_err(failed)?.join(application) };
+                serde_json::to_value(printcraft_update::install(&package, &application).map_err(failed)?).map_err(failed)?
+            }
+            "ai_models" | "ai_chat" => {
+                let provider = printcraft_ai::Provider {
+                    base_url: a.str("api_url")?.into(),
+                    api_key: a.opt_str("api_key")?.unwrap_or_default().into(),
+                    model: a.opt_str("model")?.unwrap_or_default().into(),
+                    ..Default::default()
+                };
+                if name == "ai_models" {
+                    json!({"models":printcraft_ai::fetch_models(&provider).map_err(failed)?})
+                } else {
+                    let messages = vec![printcraft_ai::Message { role: "user".into(), content: a.str("prompt")?.into() }];
+                    serde_json::to_value(
+                        printcraft_ai::chat(&provider, &messages, a.opt_str("context")?.unwrap_or_default(), &Self::ai_tools()).map_err(failed)?,
+                    )
+                    .map_err(failed)?
+                }
+            }
             "doc_open" => self.doc_open(&a)?,
             "doc_list" => json!({ "documents": self.session.docs().iter().map(summary).collect::<Vec<_>>() }),
             "doc_info" => info(self.doc(&a)?),

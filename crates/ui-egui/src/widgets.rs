@@ -7,6 +7,7 @@ use crate::{PrintCraftApp, icons};
 
 /// A mode-bar tab: text with an underline when active.
 pub fn mode_tab(ui: &mut egui::Ui, label: &str, active: bool) -> Response {
+    let label = crate::i18n::ui_tr(ui, label);
     let t = Tokens::get(ui.ctx());
     let font = if active { theme::semibold(13.5) } else { theme::medium(13.5) };
     let w = ui.fonts_mut(|f| f.layout_no_wrap(label.to_owned(), font.clone(), t.text).size().x);
@@ -25,6 +26,7 @@ pub fn mode_tab(ui: &mut egui::Ui, label: &str, active: bool) -> Response {
 
 /// Rounded pill button; `primary` fills with the accent.
 pub fn pill_button(ui: &mut egui::Ui, label: &str, primary: bool) -> Response {
+    let label = crate::i18n::ui_tr(ui, label);
     let t = Tokens::get(ui.ctx());
     let font = theme::medium(12.5);
     let w = ui.fonts_mut(|f| f.layout_no_wrap(label.to_owned(), font.clone(), t.text).size().x);
@@ -42,6 +44,7 @@ pub fn pill_button(ui: &mut egui::Ui, label: &str, primary: bool) -> Response {
 
 /// Icon + label, transparent until hovered.
 pub fn ghost_button(ui: &mut egui::Ui, icon: &str, label: &str) -> Response {
+    let label = crate::i18n::ui_tr(ui, label);
     let t = Tokens::get(ui.ctx());
     let font = theme::medium(13.0);
     let w = ui.fonts_mut(|f| f.layout_no_wrap(label.to_owned(), font.clone(), t.text).size().x);
@@ -57,6 +60,7 @@ pub fn ghost_button(ui: &mut egui::Ui, icon: &str, label: &str) -> Response {
 
 /// A search-field lookalike that opens the command palette.
 pub fn search_box(ui: &mut egui::Ui, placeholder: &str, width: f32) -> Response {
+    let placeholder = crate::i18n::ui_tr(ui, placeholder);
     let t = Tokens::get(ui.ctx());
     let (rect, resp) = ui.allocate_exact_size(vec2(width, 32.0), Sense::click());
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), placeholder));
@@ -69,10 +73,12 @@ pub fn search_box(ui: &mut egui::Ui, placeholder: &str, width: f32) -> Response 
 }
 
 pub fn menu_item(ui: &mut egui::Ui, label: &str, shortcut: &str) -> Response {
+    let label = crate::i18n::ui_tr(ui, label);
     ui.add(egui::Button::new(label).shortcut_text(shortcut))
 }
 
 pub fn section_title(ui: &mut egui::Ui, text: &str) {
+    let text = crate::i18n::ui_tr(ui, text);
     let t = Tokens::get(ui.ctx());
     ui.add_space(10.0);
     ui.label(egui::RichText::new(text.to_uppercase()).font(theme::semibold(10.5)).color(t.text_faint).extra_letter_spacing(0.6));
@@ -101,50 +107,28 @@ pub fn toast(app: &mut PrintCraftApp, ctx: &egui::Context) {
                 .corner_radius(CornerRadius::same(8))
                 .inner_margin(egui::Margin::symmetric(16, 10))
                 .show(ui, |ui| {
-                    ui.label(egui::RichText::new(msg).color(if t.dark() { Color32::from_rgb(0x22, 0x22, 0x26) } else { Color32::WHITE }));
+                    ui.label(egui::RichText::new(app.language.tr(&msg)).color(if t.dark() {
+                        Color32::from_rgb(0x22, 0x22, 0x26)
+                    } else {
+                        Color32::WHITE
+                    }));
                 });
         });
     ctx.request_repaint_after(std::time::Duration::from_millis(100));
 }
 
-/// The ArtCraft wordmark (Storyteller's brand, docs/brand/; not open source), sized to `height`.
-pub fn artcraft_logo(ui: &mut egui::Ui, height: f32) -> Response {
-    let dark = ui.visuals().dark_mode;
-    let (uri, bytes): (&str, &'static [u8]) = if dark {
-        ("bytes://artcraft-logo-white.svg", include_bytes!("../../../docs/brand/artcraft-logo-white.svg"))
-    } else {
-        ("bytes://artcraft-logo.svg", include_bytes!("../../../docs/brand/artcraft-logo.svg"))
-    };
-    ui.add(egui::Image::from_bytes(uri, bytes).max_height(height).alt_text("ArtCraft"))
-}
-
-/// The ArtCraft mark (brand blue, works on light and dark), `size` points square.
-pub fn artcraft_mark(ui: &mut egui::Ui, size: f32) -> Response {
+/// This fork's original, permissively licensed icon.
+pub fn myaipdf_mark(ui: &mut egui::Ui, size: f32) -> Response {
     ui.add(
-        egui::Image::from_bytes("bytes://artcraft-mark.svg", include_bytes!("../../../docs/brand/artcraft-mark.svg"))
+        egui::Image::from_bytes("bytes://myaipdf.svg", include_bytes!("../../../assets/myaipdf/icon.svg"))
             .fit_to_exact_size(vec2(size, size))
-            .alt_text("ArtCraft"),
+            .alt_text("MyAIPDF"),
     )
-}
-
-/// Buttons for every community link (`printcraft_engine::links`), Discord first and prominent.
-/// Returns the registry command of the one clicked.
-pub fn community_links(ui: &mut egui::Ui) -> Option<&'static str> {
-    let mut clicked = None;
-    ui.horizontal_wrapped(|ui| {
-        ui.spacing_mut().item_spacing = vec2(8.0, 8.0);
-        for (i, l) in printcraft_engine::links::LINKS.iter().enumerate() {
-            let resp = if i == 0 { icon_pill(ui, l.icon, "Join our Discord", true) } else { icon_pill(ui, l.icon, l.label, false) };
-            if resp.on_hover_text(l.url).clicked() {
-                clicked = Some(l.command);
-            }
-        }
-    });
-    clicked
 }
 
 /// A pill button with an icon (primary = filled accent).
 pub fn icon_pill(ui: &mut egui::Ui, icon: &str, label: &str, primary: bool) -> Response {
+    let label = crate::i18n::ui_tr(ui, label);
     let t = Tokens::get(ui.ctx());
     let font = theme::medium(12.5);
     let w = ui.fonts_mut(|f| f.layout_no_wrap(label.to_owned(), font.clone(), t.text).size().x);

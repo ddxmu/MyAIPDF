@@ -18,20 +18,20 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 use printcraft_ui_egui::PrintCraftApp;
+mod update_install;
 
 #[cfg(target_os = "macos")]
 mod apple_events;
-mod updates;
 
 /// Freedesktop app id: the `.desktop` file name and the hicolor icon name.
-const APP_ID: &str = "ai.storyteller.printcraft";
+const APP_ID: &str = "local.myaipdf.desktop";
 
 /// The app icon (assets/app-icon/README.md). macOS gets the version on Apple's icon grid, with a
 /// transparent margin; Windows and Linux get the full-bleed tile.
 #[cfg(target_os = "macos")]
-const APP_ICON_PNG: &[u8] = include_bytes!("../../../assets/app-icon/printcraft-1024.png");
+const APP_ICON_PNG: &[u8] = include_bytes!("../../../assets/myaipdf/icon-1024.png");
 #[cfg(not(target_os = "macos"))]
-const APP_ICON_PNG: &[u8] = include_bytes!("../../../assets/app-icon/hicolor/256x256/apps/ai.storyteller.printcraft.png");
+const APP_ICON_PNG: &[u8] = include_bytes!("../../../assets/myaipdf/icon-1024.png");
 
 fn main() -> eframe::Result {
     // Last-resort guard (AGENTS.md §4): commands, edits, opens and saves catch panics and report
@@ -50,7 +50,7 @@ fn main() -> eframe::Result {
     while let Some(a) = args.next() {
         match a.as_str() {
             "--version" => {
-                println!("printcraft {}", env!("CARGO_PKG_VERSION"));
+                println!("MyAIPDF 0.1.1 (PrintCraft {})", env!("CARGO_PKG_VERSION"));
                 return Ok(());
             }
             "--control" => control_file = args.next(),
@@ -63,7 +63,7 @@ fn main() -> eframe::Result {
     }
     let integrated = cfg!(target_os = "macos");
     let mut viewport = egui::ViewportBuilder::default()
-        .with_title("PrintCraft")
+        .with_title("MyAIPDF")
         .with_inner_size([1440.0, 920.0])
         .with_min_inner_size([820.0, 520.0])
         .with_drag_and_drop(true)
@@ -78,7 +78,7 @@ fn main() -> eframe::Result {
         viewport = viewport.with_fullsize_content_view(true).with_titlebar_shown(false).with_title_shown(false);
     }
     // eframe would otherwise derive the settings folder from the app id: keep it under "PrintCraft".
-    let persistence_path = eframe::storage_dir("PrintCraft").map(|d| d.join("app.ron"));
+    let persistence_path = eframe::storage_dir("MyAIPDF").map(|d| d.join("app.ron"));
     let mut native = eframe::NativeOptions { viewport, persistence_path, ..Default::default() };
     configure_gpu(&mut native);
     // Finder, Open With and the Dock deliver files as Apple events, not arguments; catch the one
@@ -88,15 +88,21 @@ fn main() -> eframe::Result {
     #[cfg(target_os = "macos")]
     let apple_events = &apple_events;
     eframe::run_native(
-        "PrintCraft",
+        "MyAIPDF",
         native,
         Box::new(move |cc| {
             let mut app = PrintCraftApp::new();
+            app.language = printcraft_ui_egui::i18n::Language::Zh;
             if let Some(json) = cc.storage.and_then(|s| s.get_string("printcraft")) {
                 app.restore(&json);
             }
             app.integrated_titlebar = integrated;
-            app.update_source = Some(std::sync::Arc::new(updates::latest_release));
+            app.update_source = Some(std::sync::Arc::new(printcraft_update::check_latest));
+            app.update_downloader = Some(std::sync::Arc::new(|release, progress| {
+                let directory = printcraft_update::private_directory(&std::env::temp_dir())?;
+                printcraft_update::download(release, &directory, |bytes, total| progress(bytes, total))
+            }));
+            app.update_installer = Some(std::sync::Arc::new(update_install::start));
             app.keychain_ids = cfg!(target_os = "macos");
             #[cfg(target_os = "macos")]
             {

@@ -41,32 +41,28 @@ use printcraft_render::{PageRenderer, RenderConfig, RenderRequest, RequestKind, 
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let result =
-        match args.first().map(String::as_str) {
-            Some("info") => info(&args[1..]),
-            Some("render") => render(&args[1..]),
-            Some("text") => text(&args[1..]),
-            Some("edit") => edit(&args[1..]),
-            Some("combine") => combine(&args[1..]),
-            Some("extract") => extract(&args[1..]),
-            Some("split") => split(&args[1..]),
-            Some("check") => check(&args[1..]),
-            Some("check-one") => check_one(&args[1..]),
-            Some("tools") => tools(),
-            Some("run") => run(&args[1..]),
-            Some("ui") => ui(&args[1..]),
-            #[cfg(feature = "mcp")]
-            Some("mcp") => mcp(&args[1..]),
-            Some("--version") => {
-                println!("printcraft-cli {}", env!("CARGO_PKG_VERSION"));
-                println!("Discord: {}  (help and feedback)", printcraft_engine::links::DISCORD);
-                println!("Web:     {}", printcraft_engine::links::APP_PAGE);
-                println!("Source:  {}", printcraft_engine::links::GITHUB);
-                Ok(())
-            }
-            _ => Err("usage: printcraft-cli <info|render|text|edit|combine|extract|split|check|tools|run|mcp|ui> …  (see source header for options)\nhelp and feedback: https://discord.gg/artcraft"
-                .into()),
-        };
+    let result = match args.first().map(String::as_str) {
+        Some("info") => info(&args[1..]),
+        Some("render") => render(&args[1..]),
+        Some("text") => text(&args[1..]),
+        Some("edit") => edit(&args[1..]),
+        Some("combine") => combine(&args[1..]),
+        Some("extract") => extract(&args[1..]),
+        Some("split") => split(&args[1..]),
+        Some("check") => check(&args[1..]),
+        Some("check-one") => check_one(&args[1..]),
+        Some("tools") => tools(),
+        Some("run") => run(&args[1..]),
+        Some("ui") => ui(&args[1..]),
+        #[cfg(feature = "mcp")]
+        Some("mcp") => mcp(&args[1..]),
+        Some("--version") => {
+            println!("MyAIPDF CLI 0.1.1 (PrintCraft {})", env!("CARGO_PKG_VERSION"));
+            println!("Source:  {}", printcraft_engine::links::GITHUB);
+            Ok(())
+        }
+        _ => Err("usage: myaipdf-cli <info|render|text|edit|combine|extract|split|check|tools|run|mcp|ui> …  (see source header for options)".into()),
+    };
     match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {

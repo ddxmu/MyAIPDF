@@ -83,6 +83,61 @@ fn tool_table_is_well_formed() {
 }
 
 #[test]
+fn update_install_requires_confirmation_root_and_saved_documents() {
+    let dir = workdir("update-guards");
+    let mut a = auto(&dir);
+    let mut args = json!({"path":"missing.dmg","application":"MyAIPDF.app","version":"0.1.2","sha256":"a".repeat(64),"size":3,"confirm":false});
+    assert!(a.call("update_install", &args).unwrap_err().to_string().contains("confirm:true"));
+    args["confirm"] = json!(true);
+    args["path"] = json!(std::env::temp_dir().to_string_lossy());
+    assert!(a.call("update_install", &args).unwrap_err().to_string().contains("outside"));
+    let doc = ok(&mut a, "doc_open", json!({"path":"a.pdf"}))["doc"].clone();
+    ok(&mut a, "page_rotate", json!({"doc":doc,"degrees":90}));
+    assert!(a.call("update_install", &args).unwrap_err().to_string().contains("unsaved"));
+    assert_eq!(ok(&mut a, "doc_list", json!({}))["documents"][0]["dirty"], true);
+}
+
+#[test]
+fn ai_plan_is_scoped_atomic_one_undo_and_never_autosaves() {
+    use printcraft_ai::Action;
+    let dir = workdir("myaipdf-plan");
+    let original = std::fs::read(dir.join("a.pdf")).unwrap();
+    let mut a = auto(&dir);
+    let raw = ok(&mut a, "doc_open", json!({"path":"a.pdf"}))["doc"].as_u64().unwrap();
+    let id = printcraft_engine::DocId(raw);
+    let action = |tool: &str, args: Value| Action { tool: tool.into(), args };
+    let plan = vec![action("page_rotate", json!({"pages":[1],"degrees":90})), action("doc_set_info", json!({"key":"Title","value":"中文 AI 验证"}))];
+    a.apply_ai_plan(id, &plan).unwrap();
+    assert_eq!(a.session().get(id).unwrap().info.pages[0].rotation, 90);
+    assert_eq!(std::fs::read(dir.join("a.pdf")).unwrap(), original);
+    assert!(a.session().get(id).unwrap().dirty);
+    ok(&mut a, "edit_undo", json!({"doc":raw}));
+    assert_eq!(a.session().get(id).unwrap().info.pages[0].rotation, 0);
+    assert_ne!(a.session().get(id).unwrap().info.title.as_deref(), Some("中文 AI 验证"));
+    let previous_undo = a.session().get(id).unwrap().can_undo().map(str::to_owned);
+    let previous_redo = a.session().get(id).unwrap().can_redo().map(str::to_owned);
+    let bad = vec![action("page_rotate", json!({"pages":[1],"degrees":90})), action("page_delete", json!({"pages":[999]}))];
+    assert!(a.apply_ai_plan(id, &bad).is_err());
+    let restored = a.session().get(id).unwrap();
+    assert_eq!(restored.info.pages[0].rotation, 0);
+    assert_eq!(restored.can_undo().map(str::to_owned), previous_undo);
+    assert_eq!(restored.can_redo().map(str::to_owned), previous_redo);
+    assert!(a.apply_ai_plan(id, &[action("doc_save", json!({"path":"secret.pdf"}))]).is_err());
+    assert!(a.apply_ai_plan(id, &[action("page_rotate", json!({"doc":999,"degrees":90}))]).is_err());
+    assert!(a.apply_ai_plan(id, &[action("page_rotate", json!({"degrees":90,"unrecognised":true}))]).is_err());
+    a.apply_ai_plan(id, &plan).unwrap();
+    ok(&mut a, "doc_save", json!({"doc":raw,"path":"out/ai-edited.pdf"}));
+    let re = ok(&mut a, "doc_open", json!({"path":"out/ai-edited.pdf"}))["doc"].as_u64().unwrap();
+    assert_eq!(ok(&mut a, "doc_info", json!({"doc":re}))["title"], "中文 AI 验证");
+    assert_eq!(ok(&mut a, "doc_info", json!({"doc":re}))["pages"][0]["rotation"], 90);
+    assert_eq!(std::fs::read(dir.join("a.pdf")).unwrap(), original);
+    for tool in Automation::ai_tools().as_array().unwrap() {
+        assert!(!tool["parameters"]["properties"].as_object().unwrap().contains_key("doc"));
+        assert!(printcraft_ai::ALLOWED_TOOLS.contains(&tool["name"].as_str().unwrap()));
+    }
+}
+
+#[test]
 fn open_inspect_render_and_find() {
     let dir = workdir("inspect");
     let mut a = auto(&dir);

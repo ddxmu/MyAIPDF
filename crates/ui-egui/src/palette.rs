@@ -44,14 +44,15 @@ pub fn show(app: &mut PrintCraftApp, ctx: &egui::Context) {
     let mac = cfg!(target_os = "macos") || cfg!(target_arch = "wasm32");
     let active = app.active_ids().map(|(_, id)| id);
     for spec in printcraft_engine::commands::COMMANDS {
-        let label = printcraft_engine::commands::current_label(spec, &app.session, active);
+        let source_label = printcraft_engine::commands::current_label(spec, &app.session, active);
+        let label = app.language.tr(&source_label).to_owned();
         if let Some(s) = score(&label, &q).or_else(|| score(spec.id, &q).map(|s| s + 50)) {
             hits.push((
                 s,
                 Hit {
                     group: None,
                     label,
-                    detail: spec.shortcut.map(|k| k.label(mac)).unwrap_or_else(|| spec.menu.unwrap_or("Command").to_string()),
+                    detail: spec.shortcut.map(|k| k.label(mac)).unwrap_or_else(|| app.language.tr(spec.menu.unwrap_or("Command")).to_string()),
                     icon: spec.icon,
                     command: Some(spec.id),
                     ready: app.command_enabled(spec),
@@ -60,16 +61,16 @@ pub fn show(app: &mut PrintCraftApp, ctx: &egui::Context) {
         }
     }
     for g in TOOL_GROUPS {
-        if let Some(s) = score(g.label, &q) {
+        if let Some(s) = score(app.language.tr(g.label), &q) {
             hits.push((
                 s,
                 Hit {
                     group: Some(g.id),
-                    label: g.label.to_string(),
-                    detail: "Tool".into(),
+                    label: app.language.tr(g.label).to_string(),
+                    detail: app.language.tr("Tool").into(),
                     icon: g.icon,
                     command: None,
-                    ready: g.availability == Availability::Ready,
+                    ready: g.availability == Availability::Ready || g.id == "ai",
                 },
             ));
         }
@@ -78,13 +79,13 @@ pub fn show(app: &mut PrintCraftApp, ctx: &egui::Context) {
                 if printcraft_engine::commands::command(i.command).is_some() {
                     continue; // listed above as a command
                 }
-                if let Some(s) = score(i.label, &q).or_else(|| score(i.command, &q).map(|s| s + 50)) {
+                if let Some(s) = score(app.language.tr(i.label), &q).or_else(|| score(i.command, &q).map(|s| s + 50)) {
                     hits.push((
                         s + 1,
                         Hit {
                             group: Some(g.id),
-                            label: i.label.to_string(),
-                            detail: g.label.into(),
+                            label: app.language.tr(i.label).to_string(),
+                            detail: app.language.tr(g.label).into(),
                             icon: i.icon,
                             command: Some(i.command),
                             ready: i.availability == Availability::Ready,
@@ -110,7 +111,7 @@ pub fn show(app: &mut PrintCraftApp, ctx: &egui::Context) {
                     ui.add(icons::image("search", 18.0, t.text_muted));
                     let r = ui.add(
                         egui::TextEdit::singleline(&mut app.palette_query)
-                            .hint_text("Search tools and commands…")
+                            .hint_text(crate::i18n::ui_tr(ui, "Search tools and commands…"))
                             .frame(egui::Frame::NONE)
                             .font(theme::regular(15.0))
                             .desired_width(f32::INFINITY),
@@ -141,7 +142,7 @@ pub fn show(app: &mut PrintCraftApp, ctx: &egui::Context) {
                     }
                 }
                 if hits.is_empty() {
-                    ui.label(egui::RichText::new("No matching tools").color(t.text_muted));
+                    ui.label(egui::RichText::new(crate::i18n::ui_tr(ui, "No matching tools")).color(t.text_muted));
                 }
                 ui.add_space(2.0);
                 let _ = Stroke::NONE;
