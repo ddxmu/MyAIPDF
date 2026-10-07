@@ -6,6 +6,8 @@
 
 本次构建面向 Apple Silicon（M 系列）Mac。打开 MyAIPDF.dmg，将 MyAIPDF 拖到 Applications。使用前建议保留 PDF 原件，修改后使用“另存为”。
 
+本地交付目录统一为“桌面 / MyAIPDF / 版本号 /”。每个新版分别保留 `MyAIPDF.app`、`MyAIPDF.dmg`、`SHA256SUMS.txt` 和使用说明，不覆盖已有版本。日常使用建议将应用安装到 Applications，桌面文件夹用于保存各版本。
+
 这是本地签名构建，没有 Apple 开发者公证。首次启动如被 macOS 提醒，请在 Finder 中右键应用选择“打开”，或按照“系统设置 → 隐私与安全性”中的提示操作；不要关闭系统安全保护。
 
 ## AI 助手
