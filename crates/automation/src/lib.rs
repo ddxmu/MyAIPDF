@@ -70,6 +70,15 @@ fn failed(e: impl std::fmt::Display) -> ToolError {
     ToolError::Failed(e.to_string())
 }
 
+fn watermark_report(candidates: &[printcraft_engine::WatermarkCandidate]) -> Value {
+    json!({"count":candidates.iter().map(|c|c.occurrences.len()).sum::<usize>(),
+        "candidates":candidates.iter().map(|c|json!({
+            "id":c.id,"kind":c.kind,"label":c.label,"reason":c.reason,"likely":c.likely,
+            "occurrences":c.occurrences.iter().map(|o|json!({"page":o.page+1,"rect":o.rect})).collect::<Vec<_>>()
+        })).collect::<Vec<_>>(),
+        "note":"候选可能是正文或页眉；仅删除用户选择的对象。扫描图片中的水印不可独立删除。"})
+}
+
 /// Default and maximum resolution for `page_render`.
 const DEFAULT_DPI: f64 = 96.0;
 const MAX_DPI: f64 = 600.0;
@@ -116,49 +125,109 @@ impl Automation {
                 .map(|t| {
                     let mut schema = t.input_schema;
                     if let Some(p) = schema.get_mut("properties").and_then(Value::as_object_mut) {
-                        for k in ["doc", "path", "out", "file"] {
-                            p.remove(k);
-                        }
+                        p.retain(|k, _| !printcraft_ai::blocked_arg(t.name, k));
                     }
                     if let Some(r) = schema.get_mut("required").and_then(Value::as_array_mut) {
-                        r.retain(|k| k.as_str() != Some("doc"));
+                        r.retain(|k| k.as_str().is_some_and(|k| !printcraft_ai::blocked_arg(t.name, k)));
                     }
-                    json!({"name":t.name,"description":t.description,"parameters":schema})
+                    json!({"name":t.name,"description":t.description,"parameters":schema,"read_only":t.read_only})
                 })
                 .collect(),
         )
     }
 
-    /// Validate all schemas before applying. Commit as one undo step, or restore on failure.
-    /// This never saves: the user sees dirty/undoable edits and chooses Save or Save As.
-    pub fn apply_ai_plan(&mut self, id: DocId, actions: &[printcraft_ai::Action]) -> Result<()> {
+    fn prepare_ai_plan(&self, id: DocId, actions: &[printcraft_ai::Action]) -> Result<Vec<(String, Value)>> {
         if actions.is_empty() || actions.len() > 12 {
             return Err(failed("AI 方案必须包含 1 至 12 个操作"));
         }
+        if actions.len() > 1 && actions.iter().any(|a| matches!(a.tool.as_str(), "edit_undo" | "edit_redo")) {
+            return Err(failed("撤销或重做必须单独确认执行，不能与其他修改混合"));
+        }
         let mut ready = Vec::new();
+        let mut changed_before_watermark = false;
         for action in actions {
             action.validate().map_err(failed)?;
             let mut args = action.args.clone();
-            args.as_object_mut().ok_or_else(|| failed("AI 参数必须是对象"))?.insert("doc".into(), json!(id.0));
+            let object = args.as_object_mut().ok_or_else(|| failed("AI 参数必须是对象"))?;
+            object.insert("doc".into(), json!(id.0));
+            // Consent comes from the caller's confirmation, never from the model.
+            if matches!(action.tool.as_str(), "watermark_remove" | "watermark_remove_text") {
+                object.insert("confirm".into(), json!(true));
+            }
             let def = tools::find(&action.tool).ok_or_else(|| failed("未知 AI 操作"))?;
             tools::check_args(def, &args)?;
-            ready.push((&action.tool, args));
+            if matches!(action.tool.as_str(), "watermark_remove" | "watermark_remove_text") && changed_before_watermark {
+                return Err(failed("水印删除必须先于其他修改，确保预览的页码与对象就是实际删除目标；请分步确认"));
+            }
+            changed_before_watermark |= !def.read_only;
+            ready.push((action.tool.clone(), args));
+        }
+        Ok(ready)
+    }
+
+    /// Validate before confirmation; inspect real removal targets without changing a byte.
+    pub fn preview_ai_plan(&self, id: DocId, actions: &[printcraft_ai::Action]) -> Result<Vec<Value>> {
+        let mut preview = Vec::new();
+        for (tool, args) in self.prepare_ai_plan(id, actions)? {
+            let a = Args(&args);
+            if matches!(tool.as_str(), "watermark_remove" | "watermark_remove_text") {
+                let pages = self.watermark_pages(&a)?;
+                let doc = self.doc(&a)?;
+                let found = if tool == "watermark_remove_text" {
+                    doc.watermarks_matching_text(&pages, a.str("text")?).map_err(failed)?
+                } else {
+                    let ids = a.strs("candidates")?;
+                    let candidates = doc.watermark_candidates(&pages, true).map_err(failed)?;
+                    if ids.iter().any(|id| !candidates.iter().any(|c| c.id == *id)) {
+                        return Err(failed("水印选择已过期，请重新分析"));
+                    }
+                    candidates.into_iter().filter(|c| ids.contains(&c.id.as_str())).collect()
+                };
+                if found.is_empty() {
+                    return Err(failed("未找到与指定文字匹配的可独立删除水印。请打开水印去除面板分析、预览；文档未修改。"));
+                }
+                let mut report = watermark_report(&found);
+                report["tool"] = json!(tool);
+                preview.push(report);
+            }
+        }
+        Ok(preview)
+    }
+
+    /// Confirmed edits are one undo step, or restore on failure. Read-only results stay local.
+    /// File-based operations return a panel route; they never read/save a model-chosen path.
+    pub fn apply_ai_plan(&mut self, id: DocId, actions: &[printcraft_ai::Action]) -> Result<Vec<Value>> {
+        let ready = self.prepare_ai_plan(id, actions)?;
+        let run = |adapter: &mut Self| -> Result<Vec<Value>> {
+            let mut results = Vec::new();
+            for (tool, args) in &ready {
+                let content = adapter.call(tool, args)?;
+                for item in content {
+                    if let Content::Json(value) = item {
+                        results.push(json!({"tool":tool,"result":value}));
+                    }
+                }
+            }
+            Ok(results)
+        };
+        if ready.iter().all(|(tool, _)| tools::find(tool).is_some_and(|t| t.read_only))
+            || (ready.len() == 1 && ready.first().is_some_and(|(tool, _)| matches!(tool.as_str(), "edit_undo" | "edit_redo")))
+        {
+            return run(self);
         }
         let result = self.session.atomic_edits(id, "AI PDF 修改", |session| {
             let mut adapter = Self::from_session(std::mem::take(session));
-            let result = printcraft_engine::guard(|| {
-                for (tool, args) in &ready {
-                    adapter.call(tool, args).map_err(|e| e.to_string())?;
-                }
-                Ok(())
-            })
-            .and_then(|r| r);
+            let result = printcraft_engine::guard(|| run(&mut adapter).map_err(|e| e.to_string())).and_then(|r| r);
             *session = adapter.into_session();
             result
         });
         self.renderers.remove(&id);
         self.texts.remove(&id);
         result.map_err(|e| failed(format!("AI 操作未完成，已回退本次改动：{e}")))
+    }
+
+    fn watermark_pages(&self, a: &Args) -> Result<Vec<usize>> {
+        if a.get("pages").is_some() { self.pages(a, "pages") } else { Ok((0..self.doc(a)?.info.pages.len()).collect()) }
     }
 
     /// Confine every path the tools read or write to `root` (relative paths resolve inside it).
@@ -585,21 +654,44 @@ impl Automation {
             "doc_export_images" | "doc_export_text" | "doc_export_all_images" | "doc_export_postscript" => self.export(name, &a)?,
             "doc_header_footer" | "doc_watermark" | "doc_background" | "doc_remove_marks" => self.marks(name, &a)?,
             "watermark_analyze" => {
-                let pages = self.pages(&a, "pages")?;
+                let pages = self.watermark_pages(&a)?;
                 let include_all = a.opt_bool("include_all")?.unwrap_or(false);
                 let candidates = self.doc(&a)?.watermark_candidates(&pages, include_all).map_err(failed)?;
-                json!({ "candidates": candidates.iter().map(|c| json!({
-                    "id": c.id, "kind": c.kind, "label": c.label, "reason": c.reason, "likely": c.likely,
-                    "occurrences": c.occurrences.iter().map(|o| json!({ "page": o.page + 1, "rect": o.rect })).collect::<Vec<_>>()
-                })).collect::<Vec<_>>(), "note": "候选可能是正文或页眉；仅删除用户选择的对象。扫描图片中的水印不可独立删除。" })
+                watermark_report(&candidates)
             }
             "watermark_remove" => {
                 if a.opt_bool("confirm")? != Some(true) {
                     return Err(failed("需要 confirm: true 确认删除已选择的水印"));
                 }
-                let pages = self.pages(&a, "pages")?;
+                let pages = self.watermark_pages(&a)?;
                 let ids = a.strs("candidates")?.into_iter().map(str::to_owned).collect();
                 self.apply(&a, Edit::RemoveWatermarks { pages, candidates: ids })?
+            }
+            "watermark_find" | "watermark_remove_text" => {
+                let pages = self.watermark_pages(&a)?;
+                let found = self.doc(&a)?.watermarks_matching_text(&pages, a.str("text")?).map_err(failed)?;
+                let mut report = watermark_report(&found);
+                if name == "watermark_remove_text" {
+                    if a.opt_bool("confirm")? != Some(true) {
+                        return Err(failed("需要 confirm: true 确认删除匹配的水印"));
+                    }
+                    if found.is_empty() {
+                        return Err(failed("未找到匹配的可独立删除文字水印；文档未修改"));
+                    }
+                    let candidates = found.iter().map(|c| c.id.clone()).collect();
+                    report["document"] = self.apply(&a, Edit::RemoveWatermarks { pages, candidates })?;
+                }
+                report
+            }
+            "pdf_tool_open" => {
+                let _ = self.doc(&a)?;
+                let group = a.str("group")?;
+                if !matches!(group, "save_as" | "print" | "properties")
+                    && !printcraft_engine::catalog::group(group).is_some_and(|g| g.availability == printcraft_engine::catalog::Availability::Ready)
+                {
+                    return Err(ToolError::InvalidArgs("请选择已实现的 PDF 工具面板；不能执行系统命令或更新安装".into()));
+                }
+                json!({"group":group,"requires_user_input":true,"note":"仅打开工具面板，未执行面板中的操作；文件与凭据由用户选择。"})
             }
             "page_transitions" | "prepress_vector_gray" | "prepress_hairlines" | "prepress_printer_marks" => {
                 use printcraft_engine::ProductionSettings as S;

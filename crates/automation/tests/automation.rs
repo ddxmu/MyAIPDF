@@ -152,6 +152,100 @@ fn ai_plan_is_scoped_atomic_one_undo_and_never_autosaves() {
 }
 
 #[test]
+fn ai_pdf_tools_are_complete_scoped_and_read_results_do_not_edit() {
+    use printcraft_ai::Action;
+    let dir = workdir("ai-full-pdf-tools");
+    let mut a = auto(&dir);
+    let id = printcraft_engine::DocId(ok(&mut a, "doc_open", json!({"path":"a.pdf"}))["doc"].as_u64().unwrap());
+    let defs = Automation::ai_tools();
+    let all = defs.as_array().unwrap();
+    assert_eq!(all.len(), printcraft_ai::ALLOWED_TOOLS.len(), "every approved tool must exist");
+    for tool in all {
+        for key in tool["parameters"]["properties"].as_object().unwrap().keys() {
+            assert!(!printcraft_ai::blocked_arg(tool["name"].as_str().unwrap(), key), "{tool}");
+        }
+    }
+    let read = vec![Action { tool: "text_lines".into(), args: json!({"page":1}) }, Action { tool: "watermark_analyze".into(), args: json!({}) }];
+    let before = a.session().save_bytes(id).unwrap();
+    let results = a.apply_ai_plan(id, &read).unwrap();
+    assert_eq!(results[0]["result"]["lines"][0]["text"], "Page 1");
+    assert!(!a.session().get(id).unwrap().dirty);
+    assert!(a.session().get(id).unwrap().can_undo().is_none());
+    assert_eq!(a.session().save_bytes(id).unwrap(), before);
+    for group in printcraft_engine::catalog::TOOL_GROUPS.iter().filter(|g| g.availability == printcraft_engine::catalog::Availability::Ready) {
+        let route = a.apply_ai_plan(id, &[Action { tool: "pdf_tool_open".into(), args: json!({"group":group.id}) }]).unwrap();
+        assert_eq!(route[0]["result"]["group"], group.id);
+        assert_eq!(a.session().save_bytes(id).unwrap(), before);
+    }
+    for action in [
+        Action { tool: "image_edit".into(), args: json!({"page":1,"image":1,"action":"replace","path":"/private/file"}) },
+        Action { tool: "content_update".into(), args: json!({"page":1,"index":1,"image":"/private/file"}) },
+        Action { tool: "form_set_props".into(), args: json!({"field":"f","calculate":"malicious script"}) },
+        Action { tool: "doc_compare".into(), args: json!({"other":2}) },
+        Action { tool: "pdf_tool_open".into(), args: json!({"group":"update_install"}) },
+    ] {
+        assert!(a.apply_ai_plan(id, &[action]).is_err());
+        assert_eq!(a.session().save_bytes(id).unwrap(), before);
+    }
+    a.apply_ai_plan(
+        id,
+        &[
+            Action { tool: "text_edit".into(), args: json!({"page":1,"line":1,"text":"Edited body"}) },
+            Action { tool: "bookmark_add".into(), args: json!({"title":"First","page":1}) },
+            Action { tool: "bookmark_rename".into(), args: json!({"path":[1],"title":"Renamed"}) },
+        ],
+    )
+    .unwrap();
+    assert!(page_text(&mut a, id.0)[0].contains("Edited body"));
+    assert_eq!(ok(&mut a, "bookmark_list", json!({"doc":id.0}))["bookmarks"][0]["title"], "Renamed");
+    a.apply_ai_plan(id, &[Action { tool: "edit_undo".into(), args: json!({}) }]).unwrap();
+    assert_eq!(page_text(&mut a, id.0)[0], "Page 1");
+    a.apply_ai_plan(id, &[Action { tool: "edit_redo".into(), args: json!({}) }]).unwrap();
+    assert!(page_text(&mut a, id.0)[0].contains("Edited body"));
+    assert!(
+        a.apply_ai_plan(
+            id,
+            &[Action { tool: "edit_undo".into(), args: json!({}) }, Action { tool: "page_rotate".into(), args: json!({"degrees":90}) }]
+        )
+        .is_err()
+    );
+    a.apply_ai_plan(id, &[Action { tool: "edit_undo".into(), args: json!({}) }]).unwrap();
+    assert_eq!(page_text(&mut a, id.0)[0], "Page 1");
+}
+
+#[test]
+fn ai_watermark_text_preview_confirm_undo_save_and_reopen() {
+    use printcraft_ai::Action;
+    let dir = workdir("ai-watermark-text");
+    let original = std::fs::read(dir.join("a.pdf")).unwrap();
+    let mut a = auto(&dir);
+    let id = printcraft_engine::DocId(ok(&mut a, "doc_open", json!({"path":"a.pdf"}))["doc"].as_u64().unwrap());
+    ok(&mut a, "doc_watermark", json!({"doc":id.0,"pages":[1,2],"text":"DRAFT 2026-10-08","opacity":0.25}));
+    let action = Action { tool: "watermark_remove_text".into(), args: json!({"text":"DRAFT   2026-10-08","pages":[2]}) };
+    let before = a.session().save_bytes(id).unwrap();
+    assert!(a.preview_ai_plan(id, &[Action { tool: "page_move".into(), args: json!({"pages":[2],"to":1}) }, action.clone()]).is_err());
+    let review = a.preview_ai_plan(id, std::slice::from_ref(&action)).unwrap();
+    assert_eq!(review[0]["count"], 1);
+    assert!(review[0]["candidates"][0]["label"].as_str().unwrap().contains("DRAFT 2026-10-08"));
+    assert_eq!(a.session().save_bytes(id).unwrap(), before, "preview never changes the document");
+    assert!(a.call("watermark_remove_text", &json!({"doc":id.0,"text":"DRAFT 2026-10-08","confirm":false})).is_err());
+    assert!(a.preview_ai_plan(id, &[Action { tool: "watermark_remove_text".into(), args: json!({"text":"NO MATCH"}) }]).is_err());
+    assert!(a.preview_ai_plan(id, &[Action { tool: "watermark_remove_text".into(), args: json!({"text":"("}) }]).is_err());
+    a.apply_ai_plan(id, std::slice::from_ref(&action)).unwrap();
+    let text = page_text(&mut a, id.0);
+    assert!(text[0].contains("DRAFT"));
+    assert!(!text[1].contains("DRAFT"));
+    assert!(text[1].contains("Page 2"));
+    ok(&mut a, "edit_undo", json!({"doc":id.0}));
+    assert!(page_text(&mut a, id.0)[1].contains("DRAFT"));
+    a.apply_ai_plan(id, &[action]).unwrap();
+    ok(&mut a, "doc_save", json!({"doc":id.0,"path":"watermark-copy.pdf"}));
+    let reopened = ok(&mut a, "doc_open", json!({"path":"watermark-copy.pdf"}))["doc"].as_u64().unwrap();
+    assert!(!page_text(&mut a, reopened)[1].contains("DRAFT"));
+    assert_eq!(std::fs::read(dir.join("a.pdf")).unwrap(), original);
+}
+
+#[test]
 fn open_inspect_render_and_find() {
     let dir = workdir("inspect");
     let mut a = auto(&dir);

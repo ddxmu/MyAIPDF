@@ -87,3 +87,36 @@ fn analysis_becomes_stale_after_an_edit() {
     assert!(h.query_by(|n| n.label().as_deref() == Some("删除所选水印") && n.is_disabled()).is_some());
     h.get_by_label("文档已改变，请重新分析。旧选择不能删除。");
 }
+
+#[test]
+fn watermark_filter_selects_only_matching_text_and_cycles_preview() {
+    let mut h = harness();
+    let id = h.state().views[0].id;
+    h.state_mut()
+        .session
+        .apply(
+            id,
+            Edit::AddWatermark {
+                pages: vec![0],
+                settings: Watermark { text: "DRAFT".into(), offset: [40.0, 0.0], ..Default::default() },
+                replace: false,
+                file: None,
+            },
+        )
+        .unwrap();
+    h.state_mut().watermarks.filter = "D R A F T".into();
+    h.state_mut().execute("watermark.analyze");
+    h.run_steps(3);
+    h.get_by_label("选择匹配水印").click();
+    h.run_steps(3);
+    assert_eq!(h.state().watermarks.selected.len(), 1);
+    h.get_by_label("预览位置").click();
+    h.run_steps(2);
+    let first = h.state().views[0].flash.unwrap().1;
+    h.get_by_label("下一处").click();
+    h.run_steps(2);
+    assert_ne!(h.state().views[0].flash.unwrap().1, first);
+    h.get_by_label("清空选择").click();
+    h.run_steps(3);
+    assert!(h.state().watermarks.selected.is_empty());
+}

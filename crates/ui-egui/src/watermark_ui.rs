@@ -1,7 +1,7 @@
 //! Watermark analysis and selection stay next to the document. No candidate is selected
 //! automatically; deletion needs a second confirmation and remains one undoable edit.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use printcraft_engine::{DocId, Edit, WatermarkCandidate};
 
@@ -15,6 +15,7 @@ pub struct WatermarkState {
     pub candidates: Vec<WatermarkCandidate>,
     pub selected: BTreeSet<String>,
     pub status: String,
+    pub(crate) preview_index: BTreeMap<String, usize>,
     pub(crate) analyzed: Option<(DocId, u64, Vec<usize>)>,
 }
 
@@ -38,6 +39,7 @@ impl PrintCraftApp {
                 };
                 self.watermarks.candidates = found;
                 self.watermarks.selected.clear();
+                self.watermarks.preview_index.clear();
             }
             Err(e) => {
                 self.watermarks.analyzed = None;
@@ -124,9 +126,28 @@ pub(crate) fn panel(app: &mut PrintCraftApp, ui: &mut egui::Ui) {
     }
     ui.add_space(6.0);
     let mut preview = None;
-    let filter = app.watermarks.filter.to_lowercase();
+    let filter = &app.watermarks.filter;
+    let visible: Vec<_> = app
+        .watermarks
+        .candidates
+        .iter()
+        .filter(|c| filter.trim().is_empty() || printcraft_engine::watermark_text_matches(&c.label, filter))
+        .collect();
+    if !filter.trim().is_empty() && !visible.is_empty() {
+        ui.horizontal(|ui| {
+            if ui.add_enabled(!stale, egui::Button::new("选择匹配水印")).clicked() {
+                app.watermarks.selected.extend(visible.iter().map(|c| c.id.clone()));
+            }
+            if ui.button("清空选择").clicked() {
+                app.watermarks.selected.clear();
+            }
+        });
+    }
+    if !filter.trim().is_empty() && visible.is_empty() && app.watermarks.analyzed.is_some() && !stale {
+        ui.label(egui::RichText::new("没有匹配的候选。请检查姓名/日期，或勾选人工识别后重新分析。").small().color(t.text_muted));
+    }
     egui::ScrollArea::vertical().id_salt("watermark-candidates").max_height((ui.available_height() - 115.0).max(60.0)).show(ui, |ui| {
-        for c in app.watermarks.candidates.iter().filter(|c| filter.is_empty() || c.label.to_lowercase().contains(&filter)) {
+        for c in visible {
             ui.push_id(&c.id, |ui| {
                 egui::Frame::new().fill(t.field).stroke(egui::Stroke::new(1.0, t.border)).corner_radius(8).inner_margin(8).show(ui, |ui| {
                     ui.set_width(ui.available_width());
@@ -145,9 +166,17 @@ pub(crate) fn panel(app: &mut PrintCraftApp, ui: &mut egui::Ui) {
                         c.occurrences.len(),
                         pages.iter().take(12).map(usize::to_string).collect::<Vec<_>>().join("、")
                     ));
-                    if ui.button("预览位置").clicked() {
-                        preview = c.occurrences.first().cloned();
-                    }
+                    let n = app.watermarks.preview_index.entry(c.id.clone()).or_default();
+                    ui.horizontal_wrapped(|ui| {
+                        if ui.add_enabled(!stale, egui::Button::new("预览位置")).clicked() {
+                            preview = c.occurrences.get(*n).cloned();
+                        }
+                        if c.occurrences.len() > 1 && ui.add_enabled(!stale, egui::Button::new("下一处")).clicked() {
+                            *n = (*n + 1) % c.occurrences.len();
+                            preview = c.occurrences.get(*n).cloned();
+                        }
+                        ui.label(egui::RichText::new(format!("{}/{}", *n + 1, c.occurrences.len())).small().color(t.text_muted));
+                    });
                 });
             });
             ui.add_space(6.0);
@@ -164,7 +193,10 @@ pub(crate) fn panel(app: &mut PrintCraftApp, ui: &mut egui::Ui) {
     ui.separator();
     ui.label(format!("已选择 {} 组水印", app.watermarks.selected.len()));
     if ui
-        .add_enabled(!stale && !app.watermarks.selected.is_empty(), egui::Button::new("删除所选水印").fill(t.accent).stroke(egui::Stroke::NONE))
+        .add_enabled(
+            !stale && !app.watermarks.selected.is_empty(),
+            egui::Button::new(egui::RichText::new("删除所选水印").color(egui::Color32::WHITE)).fill(t.accent).stroke(egui::Stroke::NONE),
+        )
         .clicked()
     {
         app.dialog = Some(Dialog::RemoveWatermarks);
@@ -174,7 +206,14 @@ pub(crate) fn panel(app: &mut PrintCraftApp, ui: &mut egui::Ui) {
 
 pub(crate) fn confirm(ui: &mut egui::Ui, app: &PrintCraftApp) -> (bool, bool) {
     ui.heading("确认删除水印");
-    ui.label(format!("删除已选择的 {} 组对象？未选择的正文和图片将保留。", app.watermarks.selected.len()));
+    let targets: Vec<_> = app.watermarks.candidates.iter().filter(|c| app.watermarks.selected.contains(&c.id)).flat_map(|c| &c.occurrences).collect();
+    let pages: BTreeSet<_> = targets.iter().map(|o| o.page).collect();
+    ui.label(format!(
+        "删除已选择的 {} 组对象，共 {} 处、{} 页？未选择的正文和图片将保留。",
+        app.watermarks.selected.len(),
+        targets.len(),
+        pages.len()
+    ));
     ui.label("这是候选分析，不保证每个候选都是水印。请先预览位置。操作可撤销，原文件需手动保存。");
     ui.add_space(12.0);
     let mut result = (false, false);

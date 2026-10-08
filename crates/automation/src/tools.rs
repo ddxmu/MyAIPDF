@@ -717,6 +717,12 @@ pub fn tools() -> Vec<ToolDef> {
         t("watermark_remove", "删除选定水印", "Remove only candidate IDs from a fresh analysis over the same pages. Requires confirm true. Byte-bound IDs reject stale results; a failed edit changes nothing. One undo step. Save manually; original scan pixels are never erased.")
             .cmd("watermark.remove_selected")
             .with(schema(json!({ "doc": doc(), "pages": pages("same pages as analysis"), "candidates": { "type": "array", "items": { "type": "string" }, "minItems": 1 }, "confirm": { "type": "boolean" } }), &["doc", "candidates", "confirm"])),
+        t("watermark_find", "按文字查找水印", "Locally match a name, date or phrase against likely, safely separable text watermarks. Whitespace/case normalized. Returns exact labels, counts, pages and preview rectangles; never deletes body text or images.")
+            .ro().with(schema(json!({"doc":doc(),"pages":pages("default all, at most 500"),"text":{"type":"string","minLength":2,"maxLength":256}}), &["doc","text"])),
+        t("watermark_remove_text", "按文字删除水印", "Remove only likely, safely separable text watermarks matching the user's explicit name/date/phrase. Requires confirm:true. Fails without matches; preserves unselected body and images. One undo step, never saves. Use watermark_find to preview first.")
+            .destructive().with(schema(json!({"doc":doc(),"pages":pages("default all, at most 500"),"text":{"type":"string","minLength":2,"maxLength":256},"confirm":{"type":"boolean"}}), &["doc","text","confirm"])),
+        t("pdf_tool_open", "打开 PDF 工具面板", "Return a validated PDF tool-panel route. The desktop AI UI opens that panel after confirmation; it does not execute its commands. All shipped tool groups are available, including import/export, security/signing workflows whose files and credentials must be chosen by the user.")
+            .ro().with(schema(json!({"doc":doc(),"group":{"type":"string","enum":printcraft_engine::catalog::TOOL_GROUPS.iter().filter(|g|g.availability == printcraft_engine::catalog::Availability::Ready).map(|g|g.id).chain(["save_as","print","properties"]).collect::<Vec<_>>()}}), &["doc","group"])),
         t("page_transitions","页面切换","Write a PDF /Trans dictionary for selected pages; viewers that support presentation transitions may play it. none removes the transition. Undoable, save manually.")
             .cmd("page.transitions").with(schema(json!({"doc":doc(),"pages":pages("default all"),"style":{"type":"string","enum":["none","Dissolve","Fade","Wipe"]},"seconds":{"type":"number","minimum":0.1,"maximum":30}}),&["doc"])),
         t("prepress_vector_gray","文字与矢量转灰度","Convert explicit DeviceRGB/CMYK operators, including nested Form XObjects. Selected pages are isolated from shared content. Images, ICC, spot colors and annotation appearances are unchanged. Not a color-managed press conversion. Undoable.")
@@ -1012,7 +1018,7 @@ pub fn tools() -> Vec<ToolDef> {
                     "scale": { "type": "number", "description": "Horizontal scale in percent." } }),
                 &["doc", "page"],
             )),
-        t("doc_revisions", "List revisions", "List the document's saved revisions (oldest first): each incremental update is one. Returns revision number, where it ends in the file and its size, and which signatures sign exactly that revision.")
+        t("doc_revisions", "List revisions", "List the document's saved revisions (oldest first): each incremental update is one. Returns revision number, where it ends in the file and its size, and which signatures sign exactly that revision.").ro()
             .with(schema(json!({ "doc": doc() }), &["doc"])),
         t("doc_open_revision", "Open a revision", "Open saved revision `revision` (1 = the oldest) of a document as a new, unsaved document, to see the file as it was then.")
             .with(schema(json!({ "doc": doc(), "revision": { "type": "integer", "minimum": 1 } }), &["doc", "revision"])),

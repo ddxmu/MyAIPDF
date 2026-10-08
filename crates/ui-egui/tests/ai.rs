@@ -102,6 +102,9 @@ fn chinese_ui_models_chat_confirm_undo_and_privacy() {
     server.join().unwrap();
     let requests = received.lock().unwrap();
     assert!(!requests[1].contains("PRIVATE PDF TEXT"));
+    for tool in ["text_edit", "watermark_remove_text", "image_edit", "pdf_tool_open"] {
+        assert!(requests[1].contains(tool), "AI must receive the expanded tool schemas: {tool}");
+    }
     let body: Value = serde_json::from_str(requests[1].split_once("\r\n\r\n").unwrap().1).unwrap();
     assert_eq!(body["model"], "test-chat-model");
     assert!(!h.state().persist().contains("dummy-test-key"));
@@ -113,17 +116,95 @@ fn stale_plan_and_cross_document_plan_cannot_edit() {
     let id = h.state().views[0].id;
     let source = h.state().session.get(id).unwrap().export_source();
     let actions = vec![Action { tool: "page_rotate".into(), args: json!({"pages":[1],"degrees":90}) }];
-    h.state_mut().ai.pending = Some(Pending { doc: id, bytes: source.bytes.clone(), actions: actions.clone() });
+    h.state_mut().ai.pending = Some(Pending { doc: id, bytes: source.bytes.clone(), actions: actions.clone(), review: Vec::new() });
     h.state_mut().execute("page.rotate");
     h.state_mut().confirm_ai_plan();
     assert_eq!(h.state().session.get(id).unwrap().info.pages[0].rotation, 90, "stale proposal must not rotate twice");
     assert!(h.state().ai.status.contains("版本已变化"));
-    h.state_mut().ai.pending = Some(Pending { doc: id, bytes: h.state().session.get(id).unwrap().export_source().bytes, actions });
+    h.state_mut().ai.pending =
+        Some(Pending { doc: id, bytes: h.state().session.get(id).unwrap().export_source().bytes, actions, review: Vec::new() });
     h.state_mut().open_bytes("other.pdf", None, PDF.to_vec()).unwrap();
     h.state_mut().confirm_ai_plan();
     let other = h.state().views.last().unwrap().id;
     assert_eq!(h.state().session.get(other).unwrap().info.pages[0].rotation, 0);
     assert!(!h.state().session.get(other).unwrap().dirty);
+}
+
+#[test]
+fn ai_watermark_preview_removal_and_all_tool_panel_routes_are_confirmed() {
+    use printcraft_engine::{Edit, Watermark};
+    let mut h = harness(Provider::default());
+    let id = h.state().views[0].id;
+    h.state_mut()
+        .session
+        .apply(
+            id,
+            Edit::AddWatermark {
+                pages: vec![0, 1],
+                settings: Watermark { text: "DRAFT 2026-10-08".into(), ..Default::default() },
+                replace: false,
+                file: None,
+            },
+        )
+        .unwrap();
+    let source = h.state().session.get(id).unwrap().export_source();
+    let actions = vec![Action { tool: "watermark_remove_text".into(), args: json!({"text":"DRAFT 2026-10-08"}) }];
+    let app = h.state_mut();
+    let a = printcraft_automation::Automation::from_session(std::mem::take(&mut app.session));
+    let review = a.preview_ai_plan(id, &actions).unwrap();
+    app.session = a.into_session();
+    app.ai.pending = Some(Pending { doc: id, bytes: source.bytes, actions, review });
+    h.run_steps(3);
+    h.get_by_label("预览待删水印").click();
+    h.run_steps(3);
+    assert!(h.state().views[0].flash.is_some());
+    assert_eq!(h.state().session.get(id).unwrap().watermarks_matching_text(&[0, 1], "DRAFT").unwrap().len(), 1);
+    if let Ok(out) = std::env::var("MYAIPDF_UI_QA_DIR") {
+        h.render().unwrap().save(std::path::Path::new(&out).join("ai-watermark-confirm.png")).unwrap();
+    }
+    h.get_by_label("确认执行（不保存）").click();
+    h.run_steps(3);
+    assert!(h.state().session.get(id).unwrap().watermarks_matching_text(&[0, 1], "DRAFT").unwrap().is_empty());
+    assert!(!h.state().ai.results.is_empty());
+    assert!(h.state().ai.history.iter().all(|m| !m.content.contains("PRIVATE PDF TEXT")), "local outputs are never silently sent to the model");
+    h.state_mut().execute("edit.undo");
+    assert_eq!(h.state().session.get(id).unwrap().watermarks_matching_text(&[0, 1], "DRAFT").unwrap().len(), 1);
+    let app = h.state_mut();
+    app.ai.pending = Some(Pending {
+        doc: id,
+        bytes: app.session.get(id).unwrap().export_source().bytes,
+        actions: vec![Action { tool: "pdf_tool_open".into(), args: json!({"group":"export"}) }],
+        review: Vec::new(),
+    });
+    let bytes = app.session.save_bytes(id).unwrap();
+    app.confirm_ai_plan();
+    assert_eq!(app.left, LeftPanel::Tool("export"));
+    assert_eq!(app.session.save_bytes(id).unwrap(), bytes);
+}
+
+#[test]
+fn read_results_are_local_until_user_puts_them_in_a_message() {
+    let mut h = harness(Provider::default());
+    let id = h.state().views[0].id;
+    let app = h.state_mut();
+    app.ai.pending = Some(Pending {
+        doc: id,
+        bytes: app.session.get(id).unwrap().export_source().bytes,
+        actions: vec![Action { tool: "text_lines".into(), args: json!({"page":1}) }],
+        review: Vec::new(),
+    });
+    app.confirm_ai_plan();
+    assert!(!app.session.get(id).unwrap().dirty);
+    assert!(serde_json::to_string(&app.ai.results).unwrap().contains("PRIVATE PDF TEXT"));
+    assert!(!serde_json::to_string(&app.ai.history).unwrap().contains("PRIVATE PDF TEXT"));
+    assert!(!app.persist().contains("PRIVATE PDF TEXT"));
+    h.run_steps(3);
+    h.get_by_label("本机操作结果（不会自动发送）").click();
+    h.run_steps(3);
+    h.get_by_label("将结果填入提问").click();
+    h.run_steps(3);
+    assert!(h.state().ai.input.contains("PRIVATE PDF TEXT"));
+    assert!(!h.state().ai.busy(), "handoff only fills the composer; sending is explicit");
 }
 
 #[test]

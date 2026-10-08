@@ -70,6 +70,33 @@ fn paint(op: &Op) -> bool {
     matches!(op.op.as_slice(), b"Tj" | b"TJ" | b"'" | b"\"" | b"Do" | b"BI" | b"S" | b"s" | b"f" | b"F" | b"f*" | b"B" | b"B*" | b"b" | b"b*" | b"sh")
 }
 
+// A BT may contain many independently positioned watermark copies. Removing a show
+// advances no remaining text only when absolute Tm resets isolate it on both sides.
+fn separable_text(ops: &[Op], shows: &[usize], bt: usize, end: usize) -> bool {
+    let (Some(&first), Some(&last)) = (shows.first(), shows.last()) else { return false };
+    let paints: Vec<_> = (bt..end).filter(|&j| ops.get(j).is_some_and(paint)).collect();
+    if paints == shows {
+        return true;
+    }
+    if first <= bt
+        || last >= end
+        || paints.iter().any(|&j| !matches!(ops[j].op.as_slice(), b"Tj" | b"TJ"))
+        || paints.iter().any(|&j| j >= first && j <= last && !shows.contains(&j))
+    {
+        return false;
+    }
+    let reset = |start, stop| ops.get(start..stop).is_some_and(|v| v.iter().any(|o| o.is("Tm") && o.nums::<6>().is_some()));
+    paints.iter().copied().rfind(|&j| j < first).is_none_or(|j| reset(j + 1, first))
+        && paints.iter().copied().find(|&j| j > last).is_none_or(|j| reset(last + 1, j))
+}
+
+/// Ignore whitespace differences in decoded names/dates without guessing missing characters.
+pub fn matches_text(label: &str, query: &str) -> bool {
+    let normalized = |s: &str| s.chars().filter(|c| !c.is_whitespace()).flat_map(char::to_lowercase).collect::<String>();
+    let query = normalized(query);
+    !query.is_empty() && normalized(label).contains(&query)
+}
+
 fn marked_watermark(doc: &Document, op: &Op, resources: &Dict) -> bool {
     if !op.is("BDC") || op.name(0) != Some(b"Artifact") {
         return false;
@@ -269,8 +296,8 @@ pub fn analyze(doc: &Document, selected: &[usize], include_all: bool) -> Result<
                     _ => {}
                 }
             }
-            // Only a whole, independent text object is selectable. Never delete a word
-            // embedded in a body paragraph or disturb that paragraph's implicit advances.
+            // Whole text objects and absolute-positioned copies are selectable. A word
+            // embedded in a paragraph must not disturb unselected implicit advances.
             for line in lines.iter().filter(|l| l.source_ops().0 == si && l.decodable) {
                 let (_, shows, bt, matrix) = line.source_ops();
                 if shows.iter().any(|i| covered.contains(i)) {
@@ -279,22 +306,24 @@ pub fn analyze(doc: &Document, selected: &[usize], include_all: bool) -> Result<
                 let Some(end) = ops.iter().enumerate().skip(bt.saturating_add(1)).find(|(_, o)| o.is("ET")).map(|(i, _)| i) else {
                     continue;
                 };
-                let in_bt: Vec<_> = (bt..end).filter(|&j| ops.get(j).is_some_and(paint)).collect();
-                if in_bt.as_slice() != shows || in_bt.is_empty() {
+                if !separable_text(ops, shows, bt, end) {
                     continue;
                 }
                 let low_alpha = shows.iter().any(|&i| alphas.get(i).is_some_and(|a| *a < 0.65));
-                let rotated = matrix[1].abs() + matrix[2].abs() > 0.05;
+                let rotated = matrix[1].abs() > 0.15 * matrix[0].hypot(matrix[1]);
+                // TextLine.size is already transformed from Tf into user-space points.
+                let size = line.size;
+                let meaningful = line.text.chars().any(char::is_alphanumeric);
                 let lower = line.text.trim().to_lowercase();
                 let keyword = ["draft", "confidential", "watermark", "sample", "水印", "机密", "草稿", "样本", "仅供", "内部资料"]
                     .iter()
                     .any(|k| lower.contains(k));
-                let likely = low_alpha || rotated || (keyword && line.size >= 18.0);
+                let likely = meaningful && (low_alpha || rotated || (keyword && size >= 18.0));
                 let reason = if low_alpha {
                     "半透明文字，疑似水印"
                 } else if rotated {
                     "旋转文字，疑似水印"
-                } else if line.size >= 24.0 {
+                } else if meaningful && size >= 24.0 {
                     "大号独立文字；请确认不是标题或正文"
                 } else {
                     "独立文字对象；跨页重复或水印关键词仅作为提示"
@@ -351,7 +380,17 @@ pub fn analyze(doc: &Document, selected: &[usize], include_all: bool) -> Result<
         c.id = format!("{:x}", hash.finalize());
     }
     result.retain(|c| include_all || c.likely);
-    result.sort_by_key(|c| (!c.likely, c.kind != "artifact", c.label.clone()));
+    result.sort_by_key(|c| {
+        (
+            !c.likely,
+            match c.kind {
+                "artifact" => 0,
+                "text" => 1,
+                _ => 2,
+            },
+            c.label.clone(),
+        )
+    });
     Ok(result)
 }
 

@@ -63,6 +63,48 @@ fn watermark_analysis_removes_only_selected_content_and_rejects_stale_ids() {
 }
 
 #[test]
+fn watermark_repeated_absolute_positions_in_one_text_object_are_separable() {
+    let mut doc = fixture();
+    let mut bytes =
+        b"BT /F1 319 Tf 0.05 0 0 0.05 20 700 Tm (Keep body) Tj ET\nBT /F1 319 Tf 0.05 0 0 0.05 20 650 Tm (\\050) Tj ET\nBT /F1 20 Tf 0.5 g\n"
+            .to_vec();
+    for x in [0, 198, 396] {
+        for y in [0, 210, 420, 630] {
+            bytes.extend_from_slice(format!("0.86603 0.5 -0.5 0.86603 {x} {y} Tm (DRAFT 2026-10-08) Tj\n1 0 0 1 0 0 Tm\n").as_bytes());
+        }
+    }
+    bytes.extend_from_slice(b"ET\nBT /F1 12 Tf 20 610 Td (Keep footer) Tj ET");
+    for page in printcraft_model::pages(&doc).iter().take(2) {
+        let stream = doc.add(Object::Stream(Stream::flate(Dict::new(), &bytes)));
+        doc.update_dict(page.obj, |d| d.set(b"Contents".to_vec(), Object::Ref(stream))).unwrap();
+    }
+    let before: Vec<_> = text_lines(&doc, 0).unwrap().into_iter().filter(|l| !l.text.contains("DRAFT")).map(|l| (l.text, l.rect)).collect();
+    let found = watermarks::analyze(&doc, &[0, 1], false).unwrap();
+    assert_eq!(found.len(), 1, "scaled small body text must not become a large-text candidate: {found:?}");
+    assert_eq!(found[0].label, "DRAFT 2026-10-08");
+    assert_eq!(found[0].occurrences.len(), 24);
+    assert_eq!(watermarks::remove(&mut doc, &[0, 1], &[found[0].id.clone()]).unwrap(), 24);
+    let reopened = reopen(&doc);
+    for page in [0, 1] {
+        let after: Vec<_> = text_lines(&reopened, page).unwrap().into_iter().map(|l| (l.text, l.rect)).collect();
+        assert_eq!(after, before, "unselected text and positions must survive save/reopen");
+    }
+}
+
+#[test]
+fn watermark_partial_text_requires_absolute_position_on_both_sides() {
+    for body in
+        ["BT /F1 12 Tf 1 0 0 1 20 600 Tm (Keep) Tj /F1 30 Tf (DRAFT) Tj ET", "BT /F1 30 Tf 1 0 0 1 20 600 Tm (DRAFT) Tj /F1 12 Tf (Keep) Tj ET"]
+    {
+        let mut doc = fixture();
+        let page = printcraft_model::pages(&doc)[0].obj;
+        let stream = doc.add(Object::Stream(Stream::flate(Dict::new(), body.as_bytes())));
+        doc.update_dict(page, |d| d.set(b"Contents".to_vec(), Object::Ref(stream))).unwrap();
+        assert!(!watermarks::analyze(&doc, &[0], true).unwrap().iter().any(|c| c.label == "DRAFT"));
+    }
+}
+
+#[test]
 fn watermark_artifacts_and_image_candidates_exclude_full_page_scans_and_shared_text() {
     let mut doc = fixture();
     let page = printcraft_model::pages(&doc)[0].obj;

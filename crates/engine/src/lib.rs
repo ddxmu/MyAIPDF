@@ -38,7 +38,7 @@ pub use printcraft_forms::{
 
 pub use printcraft_a11y as a11y;
 pub use printcraft_edit::production::Settings as ProductionSettings;
-pub use printcraft_edit::watermarks::Candidate as WatermarkCandidate;
+pub use printcraft_edit::watermarks::{Candidate as WatermarkCandidate, matches_text as watermark_text_matches};
 pub use printcraft_edit::{BlockStyle, PageImage, TextBlock, TextLine};
 pub mod utilities;
 
@@ -249,6 +249,19 @@ impl Document {
     pub fn watermark_candidates(&self, pages: &[usize], include_all: bool) -> Result<Vec<WatermarkCandidate>, String> {
         let editor = self.editor.as_ref().ok_or("此文档不能读取为可编辑内容")?;
         guard(|| printcraft_edit::watermarks::analyze(&editor.cos, pages, include_all))?.map_err(|e| e.to_string())
+    }
+
+    /// Text-targeted removal only considers likely, safely separable text watermarks.
+    pub fn watermarks_matching_text(&self, pages: &[usize], text: &str) -> Result<Vec<WatermarkCandidate>, String> {
+        let length = text.chars().filter(|c| !c.is_whitespace()).count();
+        if !(2..=256).contains(&length) {
+            return Err("请输入 2 至 256 字的水印姓名、日期或文字".into());
+        }
+        Ok(self
+            .watermark_candidates(pages, false)?
+            .into_iter()
+            .filter(|c| matches!(c.kind, "text" | "artifact") && printcraft_edit::watermarks::matches_text(&c.label, text))
+            .collect())
     }
 
     /// How the document opens (Document Properties ▸ Initial View).

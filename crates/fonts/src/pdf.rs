@@ -379,8 +379,9 @@ fn utf16(b: &[u8]) -> String {
 /// `bfchar`/`bfrange` entries of a ToUnicode CMap.
 fn parse_to_unicode(data: &[u8], out: &mut HashMap<u32, String>) {
     let text = String::from_utf8_lossy(data);
-    // Tokenise, keeping arrays' brackets as tokens.
-    let spaced = text.replace('[', " [ ").replace(']', " ] ");
+    // Hex strings are PostScript delimiters too: iText emits adjacent <code><unicode>
+    // tokens without spaces. Do not silently lose that entire ToUnicode mapping.
+    let spaced = text.replace('[', " [ ").replace(']', " ] ").replace('<', " <").replace('>', "> ");
     let toks: Vec<&str> = spaced.split_whitespace().collect();
     let mut i = 0;
     while i < toks.len() {
@@ -582,6 +583,18 @@ mod tests {
         assert_eq!(m.decode(&[0, 0x24, 0, 0x25, 0, 3, 0, 0x30, 0, 0x31, 0, 0x10]), "AB Hié");
         assert_eq!(m.encode("Hi A").as_deref(), Some(&[0, 0x30, 0, 0x31, 0, 3, 0, 0x24][..]));
         assert_eq!(m.encode("Z"), None);
+    }
+
+    #[test]
+    fn compact_to_unicode_maps_decode_chinese_names_and_dates() {
+        let cmap = b"2 beginbfchar\n<0001><4e2d><0002><6587>\nendbfchar\n\
+            3 beginbfrange\n<0003><0003><0020><0010><0010><002d><0013><001b><0030>\nendbfrange\n\
+            1 beginbfrange<0030><0031>[<0041><0042>]endbfrange";
+        let mut map = HashMap::new();
+        parse_to_unicode(cmap, &mut map);
+        let codes = [1, 2, 3, 0x15, 0x13, 0x15, 0x19, 0x10, 0x14, 0x13, 0x10, 0x13, 0x1b, 0x30, 0x31];
+        let decoded = codes.iter().map(|c| map.get(c).unwrap().as_str()).collect::<String>();
+        assert_eq!(decoded, "中文 2026-10-08AB");
     }
 
     #[test]

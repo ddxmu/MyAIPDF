@@ -2441,9 +2441,9 @@ tier = "P1"
 milestone = "M7"
 status = "partial"
 commands = ["watermark.analyze", "watermark.remove_selected"]
-tools = ["watermark_analyze", "watermark_remove"]
-evidence = ["crates/edit/src/tests.rs::watermark_analysis_removes_only_selected_content_and_rejects_stale_ids", "crates/edit/src/tests.rs::watermark_artifacts_and_image_candidates_exclude_full_page_scans_and_shared_text", "crates/automation/tests/automation.rs::watermark_analyze_choose_confirm_undo_save_and_reopen_through_tools", "crates/ui-egui/tests/watermarks.rs::watermark_panel_analysis_selection_confirmation_and_undo", "crates/ui-egui/tests/watermarks.rs::analysis_becomes_stale_after_an_edit"]
-notes = "Clearly marked Watermark artifacts, safely independent BT/ET text and bounded image/Form placements. Manual selection and confirmation, raw unselected bytes retained, stale analysis rejected, one undo and manual incremental save. No automatic deletion or confidence guarantee. Full-page scans excluded; nested-form text and flattened image watermarks are not independently removed. Not secure redaction."
+tools = ["watermark_analyze", "watermark_remove", "watermark_find", "watermark_remove_text"]
+evidence = ["crates/edit/src/tests.rs::watermark_analysis_removes_only_selected_content_and_rejects_stale_ids", "crates/edit/src/tests.rs::watermark_artifacts_and_image_candidates_exclude_full_page_scans_and_shared_text", "crates/edit/src/tests.rs::watermark_repeated_absolute_positions_in_one_text_object_are_separable", "crates/fonts/src/pdf.rs::compact_to_unicode_maps_decode_chinese_names_and_dates", "crates/automation/tests/automation.rs::ai_watermark_text_preview_confirm_undo_save_and_reopen", "crates/ui-egui/tests/watermarks.rs::watermark_filter_selects_only_matching_text_and_cycles_preview", "crates/ui-egui/tests/watermarks.rs::watermark_panel_analysis_selection_confirmation_and_undo", "crates/ui-egui/tests/watermarks.rs::analysis_becomes_stale_after_an_edit"]
+notes = "Marked Watermark artifacts, independent BT/ET text including absolute-Tm isolated copies, compact ToUnicode decoding, and bounded image/Form placements. Text/date matching, cycle preview and explicit selection/confirmation; unselected operators retained, stale results rejected, one undo/manual save. No confidence guarantee or scan erasing. Nested-form text and flattened pixel watermarks remain unsupported. Not secure redaction."
 
 [[feature]]
 id = "edit.decoration-profiles"
@@ -9421,9 +9421,9 @@ tier = "P2"
 milestone = "M13"
 status = "partial"
 commands = ["ai.ask"]
-tools = ["ai_models", "ai_chat"]
-evidence = ["crates/ai/src/lib.rs::compatible_models_and_chat_roundtrip_on_loopback", "crates/ui-egui/tests/ai.rs::chinese_ui_models_chat_confirm_undo_and_privacy", "crates/ui-egui/tests/ai.rs::settings_are_a_separate_modal_and_leave_the_chat_composer_visible", "crates/ui-egui/tests/ai.rs::only_known_qa_settings_are_removed_not_real_local_or_cloud_providers"]
-notes = "User-configured OpenAI-compatible models/chat endpoints, separate framed configuration modal and chat sidebar. Empty defaults, no installed model or listening service. Explicit requests only; PDF text consent, scoped confirmed proposals, no autosave. Actual capabilities and billing depend on the selected external service."
+tools = ["ai_models", "ai_chat", "pdf_tool_open", "watermark_find", "watermark_remove_text"]
+evidence = ["crates/ai/src/lib.rs::compatible_models_and_chat_roundtrip_on_loopback", "crates/ui-egui/tests/ai.rs::chinese_ui_models_chat_confirm_undo_and_privacy", "crates/ui-egui/tests/ai.rs::settings_are_a_separate_modal_and_leave_the_chat_composer_visible", "crates/ui-egui/tests/ai.rs::only_known_qa_settings_are_removed_not_real_local_or_cloud_providers", "crates/automation/tests/automation.rs::ai_pdf_tools_are_complete_scoped_and_read_results_do_not_edit", "crates/ui-egui/tests/ai.rs::ai_watermark_preview_removal_and_all_tool_panel_routes_are_confirmed", "crates/ui-egui/tests/ai.rs::read_results_are_local_until_user_puts_them_in_a_message"]
+notes = "User-configured OpenAI-compatible models/chat, empty defaults, no installed model/service. Shipped current-document PDF tools and panel routes, confirmed atomic edits with local watermark preview, explicit PDF-text consent. Read results stay local unless the user sends them. File/credential workflows are user-selected; no arbitrary file, OS or script access/autosave. Model capability and billing depend on the provider."
 
 [[feature]]
 id = "misc.ai-summary"
