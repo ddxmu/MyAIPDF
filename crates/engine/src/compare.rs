@@ -6,6 +6,7 @@ use std::sync::Arc;
 pub use printcraft_compare::{Change, Comparison, Kind, Side};
 
 use crate::{DocId, Edit, EditError, Markup, NewAnnotation, NoteIcon, Session, Shape};
+pub use printcraft_export::word::Mode as WordMode;
 
 /// Acrobat's compare colours: replaced blue, inserted green, deleted red.
 pub fn colour(kind: Kind) -> crate::Rgb {
@@ -157,6 +158,56 @@ impl OfficeFormat {
 }
 
 impl crate::Document {
+    /// Fixed-page Word, using the working PDF state without changing the open document.
+    pub fn export_word(&self, mode: WordMode) -> Result<Vec<u8>, String> {
+        if self.info.pages.is_empty() || self.info.pages.len() > 500 {
+            return Err("Word 导出支持 1 至 500 页，请分批导出".into());
+        }
+        let mut source = self.export_source();
+        let mut text = Vec::new();
+        if mode == WordMode::Editable {
+            let mut cos = self.editor.as_ref().map(|e| e.cos.clone()).ok_or("无法读取文字，请使用原样保真导出")?;
+            for i in 0..self.info.pages.len() {
+                let lines = printcraft_edit::word_export::hide_editable_text(&mut cos, i).map_err(|e| e.to_string())?;
+                text.push(
+                    lines
+                        .into_iter()
+                        .map(|t| printcraft_export::word::Text {
+                            text: t.line.text,
+                            rect: t.rect,
+                            size: t.size,
+                            font: t.line.base_font,
+                            bold: t.line.bold,
+                            italic: t.line.italic,
+                            color: t.line.color,
+                        })
+                        .collect::<Vec<_>>(),
+                );
+            }
+            source.bytes = Arc::new(printcraft_cos::write_full(&cos, &printcraft_cos::SaveOptions::default()).map_err(|e| e.to_string())?);
+        }
+        let mut exporter = crate::export::Exporter::from_source(source);
+        let mut pages = Vec::new();
+        let mut total = 0usize;
+        for (i, p) in self.info.pages.iter().enumerate() {
+            if !(7.2..=1584.0).contains(&p.width) || !(7.2..=1584.0).contains(&p.height) {
+                return Err(format!("第 {} 页超出 Word 的页面尺寸限制，未缩放原稿", i + 1));
+            }
+            let png = exporter.png(i, 200.0)?;
+            total = total.saturating_add(png.len());
+            if total > 256 * 1024 * 1024 {
+                return Err("Word 导出图像过大，请分批导出".into());
+            }
+            pages.push(printcraft_export::word::Page {
+                width: p.width as f64,
+                height: p.height as f64,
+                png,
+                text: text.get_mut(i).map(std::mem::take).unwrap_or_default(),
+            });
+        }
+        printcraft_export::word::docx(&pages, self.name.trim_end_matches(".pdf").trim_end_matches(".PDF"), mode)
+    }
+
     /// The pages as paragraphs and images (for Word, HTML and RTF export).
     pub fn export_pages(&self) -> Vec<printcraft_export::Page> {
         let Some(cos) = self.editor.as_ref().map(|e| &e.cos) else { return Vec::new() };
@@ -196,6 +247,9 @@ impl crate::Document {
 
     /// The document as a Word, HTML or RTF file.
     pub fn export_office(&self, format: OfficeFormat) -> Result<Vec<u8>, String> {
+        if format == OfficeFormat::Docx {
+            return self.export_word(WordMode::Preserve);
+        }
         if format == OfficeFormat::Pptx {
             if self.info.pages.len() > 500 {
                 return Err("PPT 导出最多 500 页，请分批导出".into());
@@ -216,7 +270,7 @@ impl crate::Document {
         let pages = self.export_pages();
         let title = self.info.title.clone().unwrap_or_else(|| self.name.trim_end_matches(".pdf").to_string());
         match format {
-            OfficeFormat::Docx => Ok(printcraft_export::docx(&pages, &title)),
+            OfficeFormat::Docx => Err("请使用 Word 导出选项".into()),
             OfficeFormat::Html => Ok(printcraft_export::html(&pages, &title).into_bytes()),
             OfficeFormat::Rtf => Ok(printcraft_export::rtf(&pages).into_bytes()),
             OfficeFormat::Xlsx => printcraft_export::xlsx(&pages),

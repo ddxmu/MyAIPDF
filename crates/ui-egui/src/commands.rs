@@ -436,7 +436,7 @@ impl PrintCraftApp {
             }
             "form.export_data" => self.export_data_dialog(false, true),
             "form.merge_data" => self.merge_data_dialog(),
-            "export.docx" => self.export_office_dialog(printcraft_engine::compare::OfficeFormat::Docx),
+            "export.docx" => self.dialog = Some(Dialog::ExportWord),
             "export.html" => self.export_office_dialog(printcraft_engine::compare::OfficeFormat::Html),
             "export.rtf" => self.export_office_dialog(printcraft_engine::compare::OfficeFormat::Rtf),
             "export.xlsx" => self.export_office_dialog(printcraft_engine::compare::OfficeFormat::Xlsx),

@@ -1825,6 +1825,17 @@ fn exporting_to_word_html_and_rtf() {
     assert!(std::fs::read(dir.join("a.docx")).unwrap().starts_with(b"PK"));
     assert!(std::fs::read_to_string(dir.join("a.rtf")).unwrap().contains("Page 2"));
     assert!(a.call("doc_export_office", &json!({ "doc": doc, "path": "a.xyz" })).is_err());
+    let before = std::fs::read(dir.join("a.pdf")).unwrap();
+    for mode in ["preserve", "editable"] {
+        let r = ok(&mut a, "doc_export_office", json!({ "doc": doc, "path": format!("{mode}.docx"), "word_mode": mode }));
+        assert_eq!(r["word_mode"], mode);
+        assert!(std::fs::read(dir.join(format!("{mode}.docx"))).unwrap().starts_with(b"PK"));
+    }
+    assert!(a.call("doc_export_office", &json!({ "doc": doc, "path": "bad.docx", "word_mode": "wrong" })).is_err());
+    assert!(a.call("doc_export_office", &json!({ "doc": doc, "path": "bad.html", "word_mode": "editable" })).is_err());
+    assert!(a.call("doc_export_office", &json!({ "doc": doc, "path": "../outside.docx", "word_mode": "editable" })).is_err());
+    assert!(!dir.join("bad.docx").exists() && !dir.join("bad.html").exists());
+    assert_eq!(std::fs::read(dir.join("a.pdf")).unwrap(), before);
 }
 
 #[test]

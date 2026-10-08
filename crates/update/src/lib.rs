@@ -15,7 +15,7 @@ mod macos;
 #[cfg(test)]
 mod tests;
 
-pub const APP_VERSION: &str = "0.1.6";
+pub const APP_VERSION: &str = "0.1.7";
 pub const REPOSITORY: &str = "https://github.com/ddxmu/MyAIPDF";
 pub const RELEASES_PAGE: &str = "https://github.com/ddxmu/MyAIPDF/releases";
 pub const LATEST_API: &str = "https://api.github.com/repos/ddxmu/MyAIPDF/releases/latest";

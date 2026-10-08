@@ -33,6 +33,82 @@ fn fixture() -> Document {
 }
 
 #[test]
+fn word_background_preserves_relative_advances_and_keeps_slanted_watermarks() {
+    let mut doc = fixture();
+    let page = printcraft_model::pages(&doc)[0].obj;
+    let content = b"q BT /F1 12 Tf 1 0 0 1 20 680 Tm (First) Tj (Second) Tj ET Q\nq BT /F1 30 Tf 0.866 0.5 -0.5 0.866 100 150 Tm (DRAFT) Tj ET Q\nBT /F1 12 Tf 3 Tr 20 600 Td (invisible OCR) Tj ET\nBT /F1 12 Tf 7 Tr 20 570 Td (clip text) Tj ET";
+    let r = doc.add(Object::Stream(Stream::flate(Dict::new(), content)));
+    doc.update_dict(page, |d| {
+        d.set(b"Contents".to_vec(), Object::Ref(r));
+    })
+    .unwrap();
+    let before = text_lines(&doc, 0).unwrap();
+    let editable = word_export::hide_editable_text(&mut doc, 0).unwrap();
+    assert_eq!(editable.len(), 1);
+    assert_eq!(editable[0].line.text, "FirstSecond");
+    assert_eq!(editable[0].line.base_font, "Courier");
+    assert_eq!(editable[0].size, 12.0);
+    assert!((editable[0].rect[0] - 20.0).abs() < 0.01);
+    let after = text_lines(&doc, 0).unwrap();
+    assert_eq!(
+        before.iter().map(|l| (&l.text, l.rect)).collect::<Vec<_>>(),
+        after.iter().map(|l| (&l.text, l.rect)).collect::<Vec<_>>(),
+        "invisible text still advances; no implicit positions are lost"
+    );
+    let background = streams(&doc, 0).join("\n");
+    assert!(background.contains("(DRAFT) Tj"));
+    assert!(background.contains("3 Tr\n(First) Tj\n0 Tr\n3 Tr\n(Second) Tj\n0 Tr"), "{background}");
+}
+
+#[test]
+fn word_export_graphics_state_spans_streams_and_shared_originals_are_not_changed() {
+    let mut original = fixture();
+    let page = printcraft_model::pages(&original)[0].obj;
+    let a = original.add(Object::Stream(Stream::flate(Dict::new(), b"q 3 Tr")));
+    let b =
+        original.add(Object::Stream(Stream::flate(Dict::new(), b"BT /F1 12 Tf 20 700 Td (Hidden) Tj ET Q BT /F1 12 Tf 20 600 Td (Visible) Tj ET")));
+    original
+        .update_dict(page, |d| {
+            d.set(b"Contents".to_vec(), Object::Array(vec![Object::Ref(a), Object::Ref(b)]));
+        })
+        .unwrap();
+    let before = streams(&original, 0);
+    let mut copy = original.clone();
+    let editable = word_export::hide_editable_text(&mut copy, 0).unwrap();
+    assert_eq!(editable.iter().map(|t| t.line.text.as_str()).collect::<Vec<_>>(), ["Visible"]);
+    assert_eq!(streams(&original, 0), before);
+}
+
+#[test]
+fn word_export_keeps_clipped_symbols_and_uses_cross_stream_transforms() {
+    let mut doc = fixture();
+    let page = printcraft_model::pages(&doc)[0].obj;
+    let a = doc.add(Object::Stream(Stream::flate(Dict::new(), b"q 0 0 600 800 re W n 2 0 0 2 0 0 cm BT /F1 12 Tf")));
+    let b = doc.add(Object::Stream(Stream::flate(Dict::new(), b"20 300 Td (Scaled) Tj ET Q q 0 0 10 10 re W n BT /F1 12 Tf 20 200 Td (Clipped) Tj ET Q BT /F2 12 Tf 20 180 Td (Symbol) Tj ET BT /F1 12 Tf -10 150 Td (Outside) Tj ET")));
+    let mut symbol = Dict::new();
+    symbol.set(b"Type".to_vec(), Object::name("Font"));
+    symbol.set(b"Subtype".to_vec(), Object::name("Type1"));
+    symbol.set(b"BaseFont".to_vec(), Object::name("Wingdings-Regular"));
+    let mut fonts = Dict::new();
+    fonts.set(b"F1".to_vec(), Object::Ref(printcraft_cos::ObjRef::new(8, 0)));
+    fonts.set(b"F2".to_vec(), Object::Dict(symbol));
+    let mut res = Dict::new();
+    res.set(b"Font".to_vec(), Object::Dict(fonts));
+    doc.update_dict(page, |d| {
+        d.set(b"Contents".to_vec(), Object::Array(vec![Object::Ref(a), Object::Ref(b)]));
+        d.set(b"Resources".to_vec(), Object::Dict(res));
+    })
+    .unwrap();
+    let editable = word_export::hide_editable_text(&mut doc, 0).unwrap();
+    assert_eq!(editable.iter().map(|t| t.line.text.as_str()).collect::<Vec<_>>(), ["Scaled"]);
+    assert_eq!(editable[0].size, 24.0);
+    assert!((editable[0].rect[0] - 40.0).abs() < 0.01);
+    let background = streams(&doc, 0).join("\n");
+    assert!(background.contains("(Clipped) Tj") && background.contains("(Symbol) Tj") && background.contains("(Outside) Tj"));
+    assert!(!background.contains("3 Tr\n(Clipped)") && !background.contains("3 Tr\n(Symbol)") && !background.contains("3 Tr\n(Outside)"));
+}
+
+#[test]
 fn watermark_analysis_removes_only_selected_content_and_rejects_stale_ids() {
     let mut doc = fixture();
     let page = printcraft_model::pages(&doc)[0].obj;

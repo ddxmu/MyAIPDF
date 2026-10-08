@@ -4,9 +4,9 @@
 
 ## 安装
 
-本次构建面向 Apple Silicon（M 系列）Mac。初次安装的完整包仍可使用 0.1.2；后续只发布版本匹配的增量更新。使用前建议保留 PDF 原件，修改后使用“另存为”。
+本次构建面向 Apple Silicon（M 系列）Mac。发布完整安装包以及版本匹配的增量更新；本版增量包以未修改的 0.1.6 为基础。使用前建议保留 PDF 原件，修改后使用“另存为”。
 
-本地交付目录统一为“桌面 / MyAIPDF / 版本号 /”。每个新版分别留存 `MyAIPDF.app`、增量 `.delta.dmg`、`SHA256SUMS.txt` 和使用说明，不覆盖旧版本。日常使用建议将应用安装到 Applications，桌面文件夹用于保存各版本。
+本地交付目录统一为“桌面 / MyAIPDF / 版本号 /”。每个新版分别留存 `MyAIPDF.app`、完整 `MyAIPDF.dmg`、增量 `.delta.dmg`、`SHA256SUMS.txt` 和使用说明，不覆盖旧版本。日常使用建议将应用安装到 Applications，桌面文件夹用于保存各版本。
 
 这是本地签名构建，没有 Apple 开发者公证。首次启动如被 macOS 提醒，请在 Finder 中右键应用选择“打开”，或按照“系统设置 → 隐私与安全性”中的提示操作；不要关闭系统安全保护。
 
@@ -35,6 +35,17 @@ AI 输出仅供参考。真实服务商的模型权限、收费和数据政策�
 - 自带上游 OCR 模型时，仅支持英文／基础拉丁字母，不支持中文扫描件 OCR。
 - 没有内置 AI 密钥或付费额度。
 
+## PDF 转 Word
+
+“导出 PDF → Microsoft Word”先打开转换方式对话框，再由用户导出。转换在本机进行，不上传 PDF、不改动原文件，也不会默默把水印删除。
+
+- **原样保真（页面图像）**：默认方式，每个 PDF 页面对应一页 Word，200 dpi 图像保留字体外观、表格、Logo、位置和分页；正文不能逐字编辑。
+- **可编辑文字（定位文本框）**：可识别的水平正文按 PDF 坐标放入 Word 文本框，保留原字体名称、字号、字重和颜色。需在 Word 电脑上安装原字体，否则会被替代；复杂、旋转、透明、裁切、符号字体、扫描及未识别内容保留为图像背景。表格线不是原生 Word 表格，输入长文字不会自动重排其他文本框。
+
+不再把 PDF 的零散文字强行猜成会撑宽、换行、错页的 Word 表格。两种模式均保留页面尺寸，超出 Word 0.1–22 英寸限制时提示失败，不悄悄缩放。一次最多 500 页，图像总量最多 256 MB；保存后请核对。保真指固定页面外观，不保证不同 PDF 渲染器逐像素一致。
+
+自动化工具 `doc_export_office` 支持 DOCX 的 `word_mode: "preserve" | "editable"`，默认 `preserve`；非 DOCX 拒绝此参数。可编辑模式不是完全可重排的原生 Word 正文，不能承诺任意 PDF 的原字体和内容全部可编辑。
+
 ## 构建
 
 Rust 稳定工具链，Apple Command Line Tools；`CRAFT_FONTS_DIR` 指向独立 craft-fonts 构建输入，IBM Plex Sans SC 及各字体许可／哈希见 manifest 和 ATTRIBUTION.toml。
@@ -48,12 +59,12 @@ CRAFT_FONTS_DIR=/absolute/path/to/craft-fonts cargo build --locked --release -p 
 bash packaging/macos/myaipdf.sh /absolute/path/MyAIPDF.dmg
 cargo build -p xtask --release
 # 增量脚本使用 target/release/xtask；也可通过 MYAIPDF_XTASK 指定已构建的 xtask。
-bash packaging/macos/myaipdf-delta.sh /absolute/base/MyAIPDF.app /absolute/new/MyAIPDF.app /absolute/MyAIPDF-0.1.4-from-0.1.3.delta.dmg
+bash packaging/macos/myaipdf-delta.sh /absolute/base/MyAIPDF.app /absolute/new/MyAIPDF.app /absolute/MyAIPDF-0.1.7-from-0.1.6.delta.dmg
 ```
 
 ## 更新与版本
 
-当前 MyAIPDF 版本 **0.1.4**（底层 PrintCraft 0.2.1）。修复只发布增量包导致 0.1.1／0.1.2 检查到新版却没有安装入口的问题，恢复兼容完整包与精确基础版本增量包的更新流程。保留水印分析与选择删除、常用工具、AI 设置、中文排版及文字编辑、红紫 DPF 图标。见 [0.1.4 更新说明](packaging/macos/MyAIPDF-0.1.4-release.md)；PDF 功能边界仍见 [0.1.3 更新说明](packaging/macos/MyAIPDF-0.1.3-release.md)。
+当前 MyAIPDF 版本 **0.1.7**（底层 PrintCraft 0.2.1）。重点修复 PDF 转 Word 的版式、表格、分页和字体外观，新增明确区分保真与可编辑的导出对话框。保留此前水印分析与选择删除、应用内 AI 工具、证书安全、PS/EPS、中文排版及文字编辑、红紫 DPF 图标。见 [0.1.7 更新说明](packaging/macos/MyAIPDF-0.1.7-release.md)及[验证记录](packaging/macos/MyAIPDF-0.1.7-verification.md)。
 
 去水印：左侧“水印去除” → 选择分析范围 → “分析水印” → 预览位置并勾选 → “删除所选水印” → 确认 → 手动保存或另存为。默认不勾选任何对象；文档更改后必须重新分析。候选不等于已确认水印，也可能是正文、标题或页眉 Logo。扫描图片内的水印不能独立删除，整页扫描背景不会被当作删除目标；这不是保密涂黑，增量 PDF 仍有旧修订数据。
 

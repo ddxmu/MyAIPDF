@@ -264,9 +264,23 @@ impl Automation {
         let ext = path.extension().map(|e| e.to_string_lossy().into_owned()).unwrap_or_default();
         let format = printcraft_engine::compare::OfficeFormat::from_extension(&ext)
             .ok_or_else(|| ToolError::InvalidArgs(format!("unsupported extension {ext:?} (docx, xlsx, pptx, html or rtf)")))?;
-        let bytes = self.doc(a)?.export_office(format).map_err(failed)?;
+        let mode = a.opt_str("word_mode")?;
+        if mode.is_some() && format != printcraft_engine::compare::OfficeFormat::Docx {
+            return Err(ToolError::InvalidArgs("word_mode only applies to DOCX".into()));
+        }
+        let bytes = if format == printcraft_engine::compare::OfficeFormat::Docx {
+            let mode = printcraft_engine::compare::WordMode::from_id(mode.unwrap_or("preserve"))
+                .ok_or_else(|| ToolError::InvalidArgs("word_mode must be preserve or editable".into()))?;
+            self.doc(a)?.export_word(mode).map_err(failed)?
+        } else {
+            self.doc(a)?.export_office(format).map_err(failed)?
+        };
         write_atomic(&path, &bytes)?;
-        Ok(json!({ "path": path.to_string_lossy(), "bytes": bytes.len(), "format": format.extension() }))
+        let mut result = json!({ "path": path.to_string_lossy(), "bytes": bytes.len(), "format": format.extension() });
+        if format == printcraft_engine::compare::OfficeFormat::Docx {
+            result["word_mode"] = json!(mode.unwrap_or("preserve"));
+        }
+        Ok(result)
     }
 
     fn pdfa_level(&self, a: &Args) -> Result<printcraft_engine::pdfa::Level> {

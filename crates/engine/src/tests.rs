@@ -1466,3 +1466,29 @@ fn guard_turns_a_panic_into_an_error() {
     let n = 3;
     assert_eq!(guard(|| -> u8 { panic!("page {n} is bad") }), Err("page 3 is bad".to_string()));
 }
+
+#[test]
+fn word_export_modes_use_working_state_without_mutating_the_document() {
+    let mut s = Session::new();
+    let bytes = s.create_from_text("Report", "Original body").unwrap();
+    let id = s.open("report.pdf", None, bytes, None).unwrap();
+    s.apply(
+        id,
+        Edit::AddText {
+            page: 0,
+            text: AddedText { rect: [20.0, 200.0, 180.0, 230.0], text: "Unsaved text".into(), size: 12.0, ..AddedText::default() },
+        },
+    )
+    .unwrap();
+    let before = s.save_bytes(id).unwrap();
+    let d = s.get(id).unwrap();
+    for mode in [compare::WordMode::Preserve, compare::WordMode::Editable] {
+        let docx = d.export_word(mode).unwrap();
+        assert!(docx.windows(16).any(|w| w == b"word/media/image"));
+        if let Ok(dir) = std::env::var("PRINTCRAFT_EXPORT_DIR") {
+            std::fs::write(format!("{dir}/{}.docx", mode.id()), docx).unwrap();
+        }
+    }
+    assert_eq!(s.save_bytes(id).unwrap(), before);
+    assert!(s.get(id).unwrap().dirty);
+}

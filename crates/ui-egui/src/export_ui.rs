@@ -40,6 +40,33 @@ impl Default for ExportDraft {
 /// Progress of a background export: (done, total, final message once finished).
 pub type ExportStatus = Arc<Mutex<Option<(usize, usize, Option<String>)>>>;
 
+pub(crate) fn word_body(ui: &mut egui::Ui, app: &mut PrintCraftApp, t: &Tokens) -> (bool, bool) {
+    use printcraft_engine::compare::WordMode;
+    ui.label(egui::RichText::new("PDF 转 Word").font(theme::semibold(18.0)));
+    ui.add_space(12.0);
+    ui.radio_value(&mut app.word_mode, WordMode::Preserve, "原样保真（页面图像）");
+    ui.label(egui::RichText::new("保留版式、字体外观、表格、Logo、水印与分页。200 dpi 页面图像，不能逐字编辑正文。").color(t.text_muted));
+    ui.add_space(12.0);
+    ui.radio_value(&mut app.word_mode, WordMode::Editable, "可编辑文字（定位文本框）");
+    ui.label(
+        egui::RichText::new(
+            "按 PDF 原位置放置文字，保留字体名称、字号和颜色。需在 Word 中安装原字体；复杂、旋转或未识别文字保留为图像，表格线不是原生 Word 表格。",
+        )
+        .color(t.text_muted),
+    );
+    ui.add_space(12.0);
+    ui.separator();
+    ui.label("在本机转换，不上传文档，不改动原 PDF。保存后请在 Word 中核对。");
+    ui.add_space(12.0);
+    let mut apply = false;
+    let mut cancel = false;
+    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+        apply = widgets::pill_button(ui, "导出 Word", true).clicked();
+        cancel = widgets::pill_button(ui, "取消", false).clicked();
+    });
+    (apply, cancel)
+}
+
 pub(crate) fn body(ui: &mut egui::Ui, app: &mut PrintCraftApp, t: &Tokens, kind: ExportKind) -> (bool, bool) {
     let count = app.active_ids().and_then(|(_, id)| app.session.get(id)).map(|d| d.info.pages.len()).unwrap_or(0);
     let d = &mut app.export_draft;

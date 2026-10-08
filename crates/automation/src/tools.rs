@@ -811,9 +811,9 @@ pub fn tools() -> Vec<ToolDef> {
                 json!({ "doc": doc(), "field": { "type": "string" }, "event": { "type": "string", "enum": ["keystroke", "format", "validate", "calculate", "mouse_up"] }, "script": { "type": "string" } }),
                 &["doc", "field", "event"],
             )),
-        t("doc_export_office", "Export to Word, Excel, PPT, HTML or RTF", "Export according to path extension. DOCX/HTML/RTF: paragraphs, images and page breaks. XLSX: one sheet per page, extracted text and heuristic table cells (review the result; not a layout clone). PPTX: one page image per slide at 120 dpi, appearance retained, not editable source text. No macros or external relationships.")
+        t("doc_export_office", "Export to Word, Excel, PPT, HTML or RTF", "Export according to path extension. DOCX word_mode preserve (default): fixed-page 200 dpi images, not editable body text; editable: positioned font-named text boxes over artwork, source fonts required in Word, rotated/complex/unmapped text stays in the image, not native Word tables. HTML/RTF: flowing paragraphs/images. XLSX: extracted text and heuristic cells, not a layout clone. PPTX: page images. Local only; no macros or external relationships.")
             .cmd("export.docx")
-            .with(schema(json!({ "doc": doc(), "path": { "type": "string" } }), &["doc", "path"])),
+            .with(schema(json!({ "doc": doc(), "path": { "type": "string" }, "word_mode": { "type": "string", "enum": ["preserve", "editable"], "description": "DOCX only, default preserve. Editable uses positioned text boxes and requires original fonts." } }), &["doc", "path"])),
         t("pdfa_verify", "Verify PDF/A", "Standards ▸ Verify PDF/A compliance: the PDF/A-2b or 3b rules the document breaks (ISO 19005 clause, message, page, whether Save as PDF/A can fix it), plus what it declares.")
             .ro()
             .cmd("standards.pdfa")

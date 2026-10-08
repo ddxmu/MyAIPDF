@@ -172,6 +172,7 @@ pub enum Dialog {
     Utility(UtilityKind),
     /// Export a PDF ▸ Image / Text.
     Export(export_ui::ExportKind),
+    ExportWord,
     /// Fill & Sign ▸ Create signature (the drawing pad).
     Signature,
     /// Comment Properties.
@@ -437,6 +438,7 @@ pub struct PrintCraftApp {
     /// Export dialog settings.
     pub export_draft: export_ui::ExportDraft,
     pub export_eps: bool,
+    pub word_mode: printcraft_engine::compare::WordMode,
     /// A running export's progress.
     export_status: Option<export_ui::ExportStatus>,
     /// The saved Fill & Sign signature and initials (drawn or typed).
@@ -574,6 +576,7 @@ impl PrintCraftApp {
             utilities: Default::default(),
             export_draft: Default::default(),
             export_eps: false,
+            word_mode: Default::default(),
             export_status: None,
             signature: None,
             initials: None,
@@ -978,6 +981,9 @@ impl PrintCraftApp {
             ("language", _) => {
                 self.language = i18n::Language::parse(value).ok_or("language must be zh, en or ja")?;
             }
+            ("word-mode", _) => {
+                self.word_mode = printcraft_engine::compare::WordMode::from_id(value).ok_or("word-mode must be preserve or editable")?;
+            }
             ("theme", _) => {
                 self.follow_system_theme = value == "system";
                 self.pending_theme = Some(if value == "dark" { ThemeKind::Dark } else { ThemeKind::Light });
@@ -1028,6 +1034,7 @@ impl PrintCraftApp {
                     "watermark" => Some(Dialog::Marks(printcraft_engine::MarkKind::Watermark)),
                     "background" => Some(Dialog::Marks(printcraft_engine::MarkKind::Background)),
                     "export-image" => Some(Dialog::Export(export_ui::ExportKind::Image)),
+                    "export-word" => Some(Dialog::ExportWord),
                     "export-text" => Some(Dialog::Export(export_ui::ExportKind::Text)),
                     "export-all-images" => Some(Dialog::Export(export_ui::ExportKind::AllImages)),
                     "accessibility-options" => Some(Dialog::AccessibilityOptions),

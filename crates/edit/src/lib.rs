@@ -595,6 +595,7 @@ mod cjk;
 pub mod production;
 pub mod text;
 pub mod watermarks;
+pub mod word_export;
 pub use text::{BlockStyle, LineEdit, TextBlock, TextLine, replace_block, replace_line, rewrite_block, text_blocks, text_lines};
 pub mod added;
 pub use added::{Added, AddedImage, AddedText, Align, Content, Family, add_content, delete_content, list_added, update_content};

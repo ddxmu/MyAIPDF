@@ -401,7 +401,9 @@ impl PrintCraftApp {
         let Some(doc) = self.session.get(id) else { return };
         let stem = doc.name.trim_end_matches(".pdf").trim_end_matches(".PDF").to_string();
         let ext = format.extension();
-        let bytes = match doc.export_office(format) {
+        let exported =
+            if format == printcraft_engine::compare::OfficeFormat::Docx { doc.export_word(self.word_mode) } else { doc.export_office(format) };
+        let bytes = match exported {
             Ok(b) => b,
             Err(e) => {
                 self.notify(e);

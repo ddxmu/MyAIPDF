@@ -97,7 +97,12 @@ fn export_to_word_html_and_rtf() {
     for ext in ["docx", "html", "rtf"] {
         let out = dir.join(format!("e.{ext}"));
         app.save_override = Some(out.to_string_lossy().into_owned());
-        assert!(app.execute(&format!("export.{ext}")));
+        if ext == "docx" {
+            // The command now opens a mode/limitations dialog; the confirmed action exports.
+            app.export_office_dialog(printcraft_engine::compare::OfficeFormat::Docx);
+        } else {
+            assert!(app.execute(&format!("export.{ext}")));
+        }
         assert!(std::fs::metadata(&out).unwrap().len() > 40, "{ext}");
     }
     assert!(std::fs::read_to_string(dir.join("e.html")).unwrap().contains("Exported words"));
