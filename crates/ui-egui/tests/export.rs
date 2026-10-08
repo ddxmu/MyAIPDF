@@ -13,6 +13,56 @@ trailer << /Root 1 0 R >>
 %%EOF";
 
 #[test]
+fn excel_export_dialog_labels_editable_and_image_modes_and_requires_confirmation() {
+    use printcraft_engine::spreadsheet::ExcelMode;
+    let dir = std::env::temp_dir().join(format!(
+        "printcraft-excel-ui-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+    ));
+    std::fs::create_dir(&dir).unwrap();
+    let target = dir.join("report.xlsx");
+    let out = target.clone();
+    let mut h = Harness::builder().with_size(egui::vec2(1400.0, 900.0)).build_eframe(move |_cc| {
+        let mut app = PrintCraftApp::new();
+        app.language = printcraft_ui_egui::i18n::Language::Zh;
+        app.open_bytes("doc.pdf", None, FIXTURE.to_vec()).unwrap();
+        app.save_override = Some(out.to_string_lossy().into_owned());
+        app.set_option("tool", "export").unwrap();
+        app
+    });
+    h.run_steps(4);
+    if let Ok(dir) = std::env::var("PRINTCRAFT_EXPORT_DIR") {
+        h.render().unwrap().save(format!("{dir}/excel-menu.png")).unwrap();
+    }
+    h.get_by_label("Excel文档(.xlsx)").click();
+    h.run_steps(2);
+    assert_eq!(h.state().dialog, Some(Dialog::ExportExcel));
+    h.get_by_label("PDF 转 Excel文档(.xlsx)");
+    h.get_by_label_contains("每页一个工作表");
+    assert_eq!(h.state().excel_mode, ExcelMode::Editable);
+    if let Ok(dir) = std::env::var("PRINTCRAFT_EXPORT_DIR") {
+        h.render().unwrap().save(format!("{dir}/excel-dialog.png")).unwrap();
+    }
+    assert!(!target.exists());
+    h.get_by_label("取消").click();
+    h.run_steps(2);
+    assert!(!target.exists());
+    h.state_mut().execute("export.xlsx");
+    h.run_steps(2);
+    h.get_by_label("原样保真（页面图像）").click();
+    h.run_steps(2);
+    assert_eq!(h.state().excel_mode, ExcelMode::Preserve);
+    h.get_by_label("导出 Excel").click();
+    h.run_steps(4);
+    assert!(std::fs::read(&target).unwrap().starts_with(b"PK"));
+    assert!(h.state().dialog.is_none());
+    assert!(h.state_mut().set_option("excel-mode", "wrong").is_err());
+    std::fs::remove_file(target).unwrap();
+    std::fs::remove_dir(dir).unwrap();
+}
+
+#[test]
 fn word_export_dialog_explains_both_modes_and_requires_explicit_export() {
     use printcraft_engine::compare::WordMode;
     let dir = std::env::temp_dir().join(format!(

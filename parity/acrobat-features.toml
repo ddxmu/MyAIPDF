@@ -6903,15 +6903,15 @@ notes = "Paragraphs with sizes, bold, italic, Unicode; page breaks. Images are l
 
 [[feature]]
 id = "create.export-xlsx"
-title = "Export to Excel (.xlsx) with table detection"
+title = "Export to Excel (.xlsx) with page-positioned cells and image fallback"
 area = "J"
 tier = "P1"
 milestone = "M10"
 status = "partial"
 commands = ["export.xlsx"]
 tools = ["doc_export_office"]
-evidence = ["crates/export/src/lib.rs::xlsx_and_pptx_contain_real_office_parts_and_preserve_safe_text", "crates/automation/tests/automation.rs::exporting_to_excel_and_image_slides_through_tools"]
-notes = "Real SpreadsheetML workbook, one sheet per PDF page, heuristic table cells and remaining text paragraphs. Formulas are inactive inline strings. Not a layout clone; scanned tables need an existing text layer."
+evidence = ["crates/export/src/spreadsheet.rs::cells_keep_source_geometry_empty_tables_fonts_colors_and_literal_formulas", "crates/edit/src/tests.rs::spreadsheet_reads_cross_stream_styles_lines_fills_and_ignores_invisible_text", "crates/engine/src/tests.rs::excel_export_modes_use_unsaved_working_state_without_mutation", "crates/automation/tests/automation.rs::exporting_to_excel_and_image_slides_through_tools", "crates/ui-egui/tests/export.rs::excel_export_dialog_labels_editable_and_image_modes_and_requires_confirmation"]
+notes = "One sheet per page. Default editable mode uses positioned native cells, ruled-table detection, merges/empty cells, source font names/sizes/colors, fills, borders and anchored artwork. Special/clipped text remains labelled local images; complex/scanned/overlapping pages are labelled image-only. Preserve mode is 200 dpi page images, not editable cells. Source fonts required; not pixel-perfect or universal table reconstruction. Formulas stay literal text; no external relationships."
 
 [[feature]]
 id = "create.export-pptx"

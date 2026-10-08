@@ -67,6 +67,30 @@ pub(crate) fn word_body(ui: &mut egui::Ui, app: &mut PrintCraftApp, t: &Tokens) 
     (apply, cancel)
 }
 
+pub(crate) fn excel_body(ui: &mut egui::Ui, app: &mut PrintCraftApp, t: &Tokens) -> (bool, bool) {
+    use printcraft_engine::spreadsheet::ExcelMode;
+    ui.label(egui::RichText::new("PDF 转 Excel文档(.xlsx)").font(theme::semibold(18.0)));
+    ui.add_space(12.0);
+    ui.radio_value(&mut app.excel_mode, ExcelMode::Editable, "可编辑单元格（尽量保留布局）");
+    ui.label(egui::RichText::new("每页一个工作表。保留文字位置、合并单元格、表格线、字号、颜色及图片。需安装原字体；复杂、扫描或不能安全识别的页面标为“图像”，不能逐字编辑。").color(t.text_muted));
+    ui.add_space(12.0);
+    ui.radio_value(&mut app.excel_mode, ExcelMode::Preserve, "原样保真（页面图像）");
+    ui.label(
+        egui::RichText::new("200 dpi 页面图像保留完整字体外观和版式，不是可编辑表格。PDF 与 Excel 排版方式不同，可编辑模式不能保证逐像素一致。")
+            .color(t.text_muted),
+    );
+    ui.add_space(12.0);
+    ui.separator();
+    ui.label("在本机转换，不上传文档，不改动原 PDF。导出后请核对内容与打印预览。");
+    ui.add_space(12.0);
+    let (mut apply, mut cancel) = (false, false);
+    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+        apply = widgets::pill_button(ui, "导出 Excel", true).clicked();
+        cancel = widgets::pill_button(ui, "取消", false).clicked();
+    });
+    (apply, cancel)
+}
+
 pub(crate) fn body(ui: &mut egui::Ui, app: &mut PrintCraftApp, t: &Tokens, kind: ExportKind) -> (bool, bool) {
     let count = app.active_ids().and_then(|(_, id)| app.session.get(id)).map(|d| d.info.pages.len()).unwrap_or(0);
     let d = &mut app.export_draft;

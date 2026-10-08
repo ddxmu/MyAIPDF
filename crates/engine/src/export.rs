@@ -15,6 +15,11 @@ pub struct Exporter {
     sizes: Vec<[f32; 2]>,
 }
 
+pub(crate) struct Fragment {
+    pub rect: [f64; 4],
+    pub png: Vec<u8>,
+}
+
 /// What an export needs from a document, as plain values that can move to a worker thread.
 #[derive(Clone)]
 pub struct ExportSource {
@@ -120,6 +125,50 @@ impl Exporter {
     }
 
     /// Page `page` (0-based) as a PNG at `dpi` (capped by the renderer's size limits).
+    pub(crate) fn fragments(&mut self, page: usize, dpi: f64, rects: &[[f64; 4]]) -> Result<Vec<Fragment>, String> {
+        self.check(page)?;
+        if rects.len() > 256 || !dpi.is_finite() || !(18.0..=300.0).contains(&dpi) {
+            return Err("无效的 Excel 局部图像请求".into());
+        }
+        let scale = dpi / 72.0;
+        let r = self.renderer.render(RenderRequest { page, scale: scale as f32, ..Default::default() });
+        if let Some(error) = r.error {
+            return Err(error);
+        }
+        let mut out = Vec::new();
+        let mut total = 0usize;
+        for &rect in rects {
+            if rect.iter().any(|v| !v.is_finite()) || rect[2] <= rect[0] || rect[3] <= rect[1] {
+                return Err("无效的 Excel 局部图像坐标".into());
+            }
+            let [x0, y0, x1, y1] = [rect[0] * scale, rect[1] * scale, rect[2] * scale, rect[3] * scale];
+            let (x0, y0, x1, y1) = (
+                x0.floor().clamp(0.0, r.width as f64) as u32,
+                y0.floor().clamp(0.0, r.height as f64) as u32,
+                x1.ceil().clamp(0.0, r.width as f64) as u32,
+                y1.ceil().clamp(0.0, r.height as f64) as u32,
+            );
+            if x1 <= x0 || y1 <= y0 {
+                continue;
+            }
+            let mut rgba = Vec::new();
+            for y in y0..y1 {
+                let start = (y as usize * r.width as usize + x0 as usize) * 4;
+                let end = start + (x1 - x0) as usize * 4;
+                rgba.extend_from_slice(r.rgba.get(start..end).ok_or("局部图像像素数据不完整")?);
+            }
+            total = total.saturating_add(rgba.len());
+            if total > 256 * 1024 * 1024 {
+                return Err("Excel 局部图像过大".into());
+            }
+            out.push(Fragment {
+                rect: [x0 as f64 / scale, y0 as f64 / scale, x1 as f64 / scale, y1 as f64 / scale],
+                png: encode_png(x1 - x0, y1 - y0, &rgba)?,
+            });
+        }
+        Ok(out)
+    }
+
     pub fn png(&mut self, page: usize, dpi: f64) -> Result<Vec<u8>, String> {
         self.check(page)?;
         let r = self.renderer.render(RenderRequest { page, scale: (dpi.clamp(18.0, 1200.0) / 72.0) as f32, ..Default::default() });

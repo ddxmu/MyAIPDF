@@ -52,7 +52,7 @@ const REL: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relatio
 const RELS: &str = "http://schemas.openxmlformats.org/package/2006/relationships";
 const CT: &str = "http://schemas.openxmlformats.org/package/2006/content-types";
 
-fn family(name: &str) -> String {
+pub(crate) fn family(name: &str) -> String {
     let name = name.split_once('+').filter(|(tag, _)| tag.len() == 6 && tag.bytes().all(|b| b.is_ascii_uppercase())).map_or(name, |(_, n)| n);
     let lower = name.to_ascii_lowercase();
     let family = if lower.starts_with("microsoftyahei") {

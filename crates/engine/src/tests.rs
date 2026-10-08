@@ -1468,8 +1468,36 @@ fn guard_turns_a_panic_into_an_error() {
 }
 
 #[test]
+fn excel_export_modes_use_unsaved_working_state_without_mutation() {
+    let mut s = Session::new().with_clock(|| 1_700_000_000);
+    let bytes = s.create_from_text("Report", "Original body").unwrap();
+    let id = s.open("report.pdf", None, bytes, None).unwrap();
+    s.apply(
+        id,
+        Edit::AddText {
+            page: 0,
+            text: AddedText { rect: [20.0, 200.0, 180.0, 230.0], text: "Unsaved text".into(), size: 12.0, ..AddedText::default() },
+        },
+    )
+    .unwrap();
+    let before = s.save_bytes(id).unwrap();
+    let d = s.get(id).unwrap();
+    for mode in [spreadsheet::ExcelMode::Editable, spreadsheet::ExcelMode::Preserve] {
+        let bytes = d.export_excel(mode).unwrap();
+        assert!(bytes.starts_with(b"PK"));
+        assert!(bytes.windows(24).any(|w| w == b"xl/worksheets/sheet1.xml"));
+        if let Ok(dir) = std::env::var("PRINTCRAFT_EXPORT_DIR") {
+            std::fs::write(format!("{dir}/{}.xlsx", mode.id()), bytes).unwrap();
+        }
+    }
+    assert_eq!(s.save_bytes(id).unwrap(), before);
+    assert!(s.get(id).unwrap().dirty);
+    assert_eq!(spreadsheet::ExcelMode::from_id("editable"), Some(spreadsheet::ExcelMode::Editable));
+}
+
+#[test]
 fn word_export_modes_use_working_state_without_mutating_the_document() {
-    let mut s = Session::new();
+    let mut s = Session::new().with_clock(|| 1_700_000_000);
     let bytes = s.create_from_text("Report", "Original body").unwrap();
     let id = s.open("report.pdf", None, bytes, None).unwrap();
     s.apply(

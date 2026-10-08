@@ -43,6 +43,7 @@ pub fn show(app: &mut PrintCraftApp, ctx: &egui::Context) {
     let mut utility_now = false;
     let mut export_now = false;
     let mut word_now = false;
+    let mut excel_now = false;
     let mut props_now = false;
     let mut field_props_now = false;
     let mut redact_now: Option<Dialog> = None;
@@ -893,6 +894,12 @@ pub fn show(app: &mut PrintCraftApp, ctx: &egui::Context) {
                 close = apply || cancel;
                 return;
             }
+            Dialog::ExportExcel => {
+                let (apply, cancel) = crate::export_ui::excel_body(ui, app, &t);
+                excel_now = apply;
+                close = apply || cancel;
+                return;
+            }
             Dialog::Marks(kind) => {
                 ui.set_width(720.0);
                 let (apply, cancel) = crate::marks_ui::body(ui, app, &t, kind);
@@ -1216,6 +1223,9 @@ pub fn show(app: &mut PrintCraftApp, ctx: &egui::Context) {
     }
     if word_now {
         app.export_office_dialog(printcraft_engine::compare::OfficeFormat::Docx);
+    }
+    if excel_now {
+        app.export_office_dialog(printcraft_engine::compare::OfficeFormat::Xlsx);
     }
     if marks_now && let (Dialog::Marks(kind), Some((_, id))) = (dialog, app.active_ids()) {
         let count = app.session.get(id).map(|d| d.info.pages.len()).unwrap_or(0);

@@ -250,6 +250,9 @@ impl crate::Document {
         if format == OfficeFormat::Docx {
             return self.export_word(WordMode::Preserve);
         }
+        if format == OfficeFormat::Xlsx {
+            return self.export_excel(crate::spreadsheet::ExcelMode::Editable);
+        }
         if format == OfficeFormat::Pptx {
             if self.info.pages.len() > 500 {
                 return Err("PPT 导出最多 500 页，请分批导出".into());
@@ -273,7 +276,7 @@ impl crate::Document {
             OfficeFormat::Docx => Err("请使用 Word 导出选项".into()),
             OfficeFormat::Html => Ok(printcraft_export::html(&pages, &title).into_bytes()),
             OfficeFormat::Rtf => Ok(printcraft_export::rtf(&pages).into_bytes()),
-            OfficeFormat::Xlsx => printcraft_export::xlsx(&pages),
+            OfficeFormat::Xlsx => Err("请使用 Excel 导出选项".into()),
             OfficeFormat::Pptx => Err("请使用页面图片导出".into()),
         }
     }

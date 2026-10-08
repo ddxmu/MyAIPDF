@@ -20,6 +20,7 @@ pub mod export;
 pub mod js;
 pub mod links;
 pub mod ocr;
+pub mod spreadsheet;
 
 pub use printcraft_organize::{BoxSpec, PageBox, SplitBy, split_ranges};
 

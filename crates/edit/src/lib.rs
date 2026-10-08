@@ -593,6 +593,7 @@ pub mod images;
 pub use images::{ImageChange, PageImage, change_image, page_images, rect_to_rect, turn_about_centre};
 mod cjk;
 pub mod production;
+pub mod sheet_export;
 pub mod text;
 pub mod watermarks;
 pub mod word_export;

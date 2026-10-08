@@ -260,7 +260,7 @@ pub const COMMANDS: &[CommandSpec] = &[
     c("export.docx", "Export to Word…", FILE, None, Document, "file-text"),
     c("export.html", "Export to HTML…", FILE, None, Document, "file-symlink"),
     c("export.rtf", "Export to RTF…", FILE, None, Document, "file-text"),
-    c("export.xlsx", "导出 Excel（文字/表格）…", FILE, None, Document, "grid-3x3"),
+    c("export.xlsx", "导出 Excel文档(.xlsx)…", FILE, None, Document, "grid-3x3"),
     c("export.pptx", "导出 PPT（页面图片）…", FILE, None, Document, "presentation"),
     c("app.preferences", "Preferences…", None, None, Nothing, "settings"),
     c("tools.js_console", "JavaScript console…", None, Some(Shortcut::cmd("J")), Document, "square-terminal"),

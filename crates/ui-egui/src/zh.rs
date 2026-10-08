@@ -12,7 +12,7 @@ pub const CHINESE: &[(&str, &str)] = &[
     ("Remove watermarks", "水印去除"),
     ("Analyze watermarks", "分析水印"),
     ("Select and remove watermarks", "选择与删除水印"),
-    ("Excel (text and tables)", "Excel（文字与表格提取）"),
+    ("Excel (text and tables)", "Excel文档(.xlsx)"),
     ("PPT (one page image per slide)", "PPT（每页一张图片）"),
     ("Multiple PDFs, images or text files", "多个 PDF、图片或文本"),
     ("Basic preflight (PDF/A)", "基础预检（PDF/A）"),
@@ -667,6 +667,7 @@ mod tests {
             assert_ne!(Language::Zh.tr(group.label), group.label, "{}", group.label);
         }
         assert_eq!(Language::Zh.tr("客户合同.pdf"), "客户合同.pdf");
+        assert_eq!(Language::Zh.tr("Excel (text and tables)"), "Excel文档(.xlsx)");
         assert_eq!(Language::parse("zh-cn"), Some(Language::Zh));
     }
 }

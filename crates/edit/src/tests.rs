@@ -33,6 +33,93 @@ fn fixture() -> Document {
 }
 
 #[test]
+fn spreadsheet_image_coordinates_follow_crop_and_covered_pixels_are_not_exported() {
+    let mut d = fixture();
+    let p = printcraft_model::pages(&d)[0].obj;
+    let mut dict = Dict::new();
+    dict.set(b"Type".to_vec(), Object::name("XObject"));
+    dict.set(b"Subtype".to_vec(), Object::name("Image"));
+    dict.set(b"Width".to_vec(), 1i64);
+    dict.set(b"Height".to_vec(), 1i64);
+    dict.set(b"BitsPerComponent".to_vec(), 8i64);
+    dict.set(b"ColorSpace".to_vec(), Object::name("DeviceRGB"));
+    let image = d.add(Object::Stream(Stream::from_raw(dict, vec![12, 32, 55])));
+    let mut objects = Dict::new();
+    objects.set(b"Im".to_vec(), Object::Ref(image));
+    let mut resources = Dict::new();
+    resources.set(b"XObject".to_vec(), Object::Dict(objects));
+    let source = b"q 100 0 0 20 30 710 cm /Im Do Q";
+    let content = d.add(Object::Stream(Stream::flate(Dict::new(), source)));
+    d.update_dict(p, |p| {
+        p.set(b"Resources".to_vec(), Object::Dict(resources));
+        p.set(b"CropBox".to_vec(), Object::Array([20, 50, 520, 750].into_iter().map(Object::Int).collect()));
+        p.set(b"Contents".to_vec(), Object::Ref(content));
+    })
+    .unwrap();
+    let mut copy = d.clone();
+    let layout = sheet_export::layout(&mut copy, 0).unwrap();
+    assert!(!layout.complex);
+    assert_eq!(layout.images, [[10.0, 20.0, 110.0, 40.0]]);
+    let covered = d.add(Object::Stream(Stream::flate(Dict::new(), b"q 100 0 0 20 30 710 cm /Im Do Q 1 g 30 710 100 20 re f")));
+    d.update_dict(p, |p| {
+        p.set(b"Contents".to_vec(), Object::Ref(covered));
+    })
+    .unwrap();
+    assert!(sheet_export::layout(&mut d, 0).unwrap().complex);
+}
+
+#[test]
+fn spreadsheet_reads_cross_stream_styles_lines_fills_and_ignores_invisible_text() {
+    let mut original = fixture();
+    let p = printcraft_model::pages(&original)[0].obj;
+    let a = original.add(Object::Stream(Stream::flate(
+        Dict::new(),
+        b"q 0.9 0.95 1 rg 20 600 100 50 re f 0.2 0.4 0.6 RG 1.5 w 20 600 m 120 600 l S BT /F1 12 Tf",
+    )));
+    let b = original.add(Object::Stream(Stream::flate(
+        Dict::new(),
+        b"0.2 0.3 0.4 rg 25 620 Td (Visible) Tj ET Q BT /F1 12 Tf 3 Tr 20 400 Td (Hidden OCR) Tj ET",
+    )));
+    original
+        .update_dict(p, |d| {
+            d.set(b"Contents".to_vec(), Object::Array(vec![Object::Ref(a), Object::Ref(b)]));
+        })
+        .unwrap();
+    let before = streams(&original, 0);
+    let mut copy = original.clone();
+    let layout = sheet_export::layout(&mut copy, 0).unwrap();
+    assert!(!layout.complex);
+    assert_eq!(layout.text.len(), 1);
+    assert_eq!(layout.text[0].line.text, "Visible");
+    assert_eq!(layout.rules[0].color, [0.2, 0.4, 0.6]);
+    assert_eq!(layout.rules[0].width, 1.5);
+    assert_eq!(layout.fills.len(), 1);
+    assert!((layout.text[0].rect[0] - 25.0).abs() < 0.01);
+    assert_eq!(streams(&original, 0), before);
+}
+
+#[test]
+fn spreadsheet_falls_back_for_occluded_clipped_rotated_and_transparent_content() {
+    for content in [
+        "BT /F1 12 Tf 20 680 Td (Secret) Tj ET 1 g 15 670 100 30 re f",
+        "q 0 0 10 10 re W n BT /F1 12 Tf 20 680 Td (Clipped) Tj ET Q",
+        "BT /F1 12 Tf 0.866 0.5 -0.5 0.866 100 150 Tm (DRAFT) Tj ET",
+        "q /Unknown gs BT /F1 12 Tf 20 680 Td (Transparent) Tj ET Q",
+        "0 0 m 10 10 20 20 30 40 c S",
+    ] {
+        let mut d = fixture();
+        let p = printcraft_model::pages(&d)[0].obj;
+        let r = d.add(Object::Stream(Stream::flate(Dict::new(), content.as_bytes())));
+        d.update_dict(p, |page| {
+            page.set(b"Contents".to_vec(), Object::Ref(r));
+        })
+        .unwrap();
+        let layout = sheet_export::layout(&mut d, 0).unwrap();
+        assert!(layout.complex || layout.text.is_empty(), "{content}");
+    }
+}
+
+#[test]
 fn word_background_preserves_relative_advances_and_keeps_slanted_watermarks() {
     let mut doc = fixture();
     let page = printcraft_model::pages(&doc)[0].obj;

@@ -1851,6 +1851,14 @@ fn exporting_to_excel_and_image_slides_through_tools() {
     assert!(xlsx.starts_with(b"PK") && xlsx.windows(24).any(|w| w == b"xl/worksheets/sheet3.xml"));
     assert!(pptx.starts_with(b"PK") && pptx.windows(19).any(|w| w == b"ppt/media/page3.png"));
     assert!(a.call("doc_export_office", &json!({"doc":doc,"path":"../outside.xlsx"})).is_err());
+    for mode in ["editable", "preserve"] {
+        let r = ok(&mut a, "doc_export_office", json!({"doc":doc,"path":format!("{mode}.xlsx"),"excel_mode":mode}));
+        assert_eq!(r["excel_mode"], mode);
+    }
+    assert!(a.call("doc_export_office", &json!({"doc":doc,"path":"bad.xlsx","excel_mode":"wrong"})).is_err());
+    assert!(a.call("doc_export_office", &json!({"doc":doc,"path":"bad.docx","excel_mode":"editable"})).is_err());
+    assert!(a.call("doc_export_office", &json!({"doc":doc,"path":"bad.xlsx","word_mode":"editable"})).is_err());
+    assert!(!dir.join("bad.xlsx").exists() && !dir.join("bad.docx").exists());
     assert_eq!(std::fs::read(dir.join("a.pdf")).unwrap(), fixture(3));
 }
 

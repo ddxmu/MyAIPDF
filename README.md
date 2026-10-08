@@ -4,7 +4,7 @@
 
 ## 安装
 
-本次构建面向 Apple Silicon（M 系列）Mac。发布完整安装包以及版本匹配的增量更新；本版增量包以未修改的 0.1.6 为基础。使用前建议保留 PDF 原件，修改后使用“另存为”。
+本次构建面向 Apple Silicon（M 系列）Mac。提供完整安装包以及版本匹配的增量更新；本版增量包以未修改的 0.1.7 为基础。使用前建议保留 PDF 原件，修改后使用“另存为”。
 
 本地交付目录统一为“桌面 / MyAIPDF / 版本号 /”。每个新版分别留存 `MyAIPDF.app`、完整 `MyAIPDF.dmg`、增量 `.delta.dmg`、`SHA256SUMS.txt` 和使用说明，不覆盖旧版本。日常使用建议将应用安装到 Applications，桌面文件夹用于保存各版本。
 
@@ -46,6 +46,17 @@ AI 输出仅供参考。真实服务商的模型权限、收费和数据政策�
 
 自动化工具 `doc_export_office` 支持 DOCX 的 `word_mode: "preserve" | "editable"`，默认 `preserve`；非 DOCX 拒绝此参数。可编辑模式不是完全可重排的原生 Word 正文，不能承诺任意 PDF 的原字体和内容全部可编辑。
 
+## PDF 转 Excel
+
+“导出 PDF → Excel文档(.xlsx)”打开转换方式对话框，确认后选择保存位置。每个 PDF 页面对应一个工作表，原文件及撤销历史不变，文档不上传。
+
+- **可编辑单元格（默认）**：按原坐标组织内容，识别有边框表格，保留合并及空白单元格、行列尺寸、字体名称、字号、字重、颜色、底色、表格线和原始图片；无边框文字保留原位置，不强行猜成表格。小数与百分比仅在无歧义时转为数值，长编号及前导零保持文字，PDF 中的公式文字不会执行。
+- **原样保真（页面图像）**：200 dpi 整页图像保留字体外观、版式、图片、表格及分页；正文与表格不能逐字编辑。
+
+可编辑模式需安装源字体。特殊、裁切或无法安全读取的局部文字保留为图像，工作表名标注“局部图像”；复杂、扫描、重叠布局等不能可靠映射的整页标为“图像”。不会用未识别内容或原本被遮挡的字符填入单元格。Excel 的单元格排版不能保证与 PDF 逐像素相同，修改较长内容后需核对布局与打印预览；不承诺转换任意 PDF 为完全可编辑表格。一次最多 500 页，图片总量最多 256 MB。
+
+自动化工具 `doc_export_office` 支持 XLSX 专用 `excel_mode: "editable" | "preserve"`，默认 `editable`；其他格式拒绝此参数。Word 模式与之前保持兼容。
+
 ## 构建
 
 Rust 稳定工具链，Apple Command Line Tools；`CRAFT_FONTS_DIR` 指向独立 craft-fonts 构建输入，IBM Plex Sans SC 及各字体许可／哈希见 manifest 和 ATTRIBUTION.toml。
@@ -59,12 +70,12 @@ CRAFT_FONTS_DIR=/absolute/path/to/craft-fonts cargo build --locked --release -p 
 bash packaging/macos/myaipdf.sh /absolute/path/MyAIPDF.dmg
 cargo build -p xtask --release
 # 增量脚本使用 target/release/xtask；也可通过 MYAIPDF_XTASK 指定已构建的 xtask。
-bash packaging/macos/myaipdf-delta.sh /absolute/base/MyAIPDF.app /absolute/new/MyAIPDF.app /absolute/MyAIPDF-0.1.7-from-0.1.6.delta.dmg
+bash packaging/macos/myaipdf-delta.sh /absolute/base/MyAIPDF.app /absolute/new/MyAIPDF.app /absolute/MyAIPDF-0.1.8-from-0.1.7.delta.dmg
 ```
 
 ## 更新与版本
 
-当前 MyAIPDF 版本 **0.1.7**（底层 PrintCraft 0.2.1）。重点修复 PDF 转 Word 的版式、表格、分页和字体外观，新增明确区分保真与可编辑的导出对话框。保留此前水印分析与选择删除、应用内 AI 工具、证书安全、PS/EPS、中文排版及文字编辑、红紫 DPF 图标。见 [0.1.7 更新说明](packaging/macos/MyAIPDF-0.1.7-release.md)及[验证记录](packaging/macos/MyAIPDF-0.1.7-verification.md)。
+当前 MyAIPDF 版本 **0.1.8**（底层 PrintCraft 0.2.1）。Excel 入口改名为“Excel文档(.xlsx)”，新增按页定位的可编辑单元格及明确区分的原样图像导出，修复流式提取丢失字体、表格合并和布局的问题。保留 0.1.7 Word 两种导出模式及此前水印、AI、证书、PS/EPS、中文文字编辑和红紫 DPF 图标。见 [0.1.8 更新说明](packaging/macos/MyAIPDF-0.1.8-release.md)及[验证记录](packaging/macos/MyAIPDF-0.1.8-verification.md)。
 
 去水印：左侧“水印去除” → 选择分析范围 → “分析水印” → 预览位置并勾选 → “删除所选水印” → 确认 → 手动保存或另存为。默认不勾选任何对象；文档更改后必须重新分析。候选不等于已确认水印，也可能是正文、标题或页眉 Logo。扫描图片内的水印不能独立删除，整页扫描背景不会被当作删除目标；这不是保密涂黑，增量 PDF 仍有旧修订数据。
 

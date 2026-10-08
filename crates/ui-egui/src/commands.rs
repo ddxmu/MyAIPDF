@@ -439,7 +439,7 @@ impl PrintCraftApp {
             "export.docx" => self.dialog = Some(Dialog::ExportWord),
             "export.html" => self.export_office_dialog(printcraft_engine::compare::OfficeFormat::Html),
             "export.rtf" => self.export_office_dialog(printcraft_engine::compare::OfficeFormat::Rtf),
-            "export.xlsx" => self.export_office_dialog(printcraft_engine::compare::OfficeFormat::Xlsx),
+            "export.xlsx" => self.dialog = Some(Dialog::ExportExcel),
             "export.pptx" => self.export_office_dialog(printcraft_engine::compare::OfficeFormat::Pptx),
             "form.prepare" => {
                 self.left = crate::LeftPanel::Tool("form");

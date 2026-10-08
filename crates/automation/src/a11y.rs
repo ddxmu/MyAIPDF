@@ -265,13 +265,21 @@ impl Automation {
         let format = printcraft_engine::compare::OfficeFormat::from_extension(&ext)
             .ok_or_else(|| ToolError::InvalidArgs(format!("unsupported extension {ext:?} (docx, xlsx, pptx, html or rtf)")))?;
         let mode = a.opt_str("word_mode")?;
+        let excel_mode = a.opt_str("excel_mode")?;
         if mode.is_some() && format != printcraft_engine::compare::OfficeFormat::Docx {
             return Err(ToolError::InvalidArgs("word_mode only applies to DOCX".into()));
+        }
+        if excel_mode.is_some() && format != printcraft_engine::compare::OfficeFormat::Xlsx {
+            return Err(ToolError::InvalidArgs("excel_mode only applies to XLSX".into()));
         }
         let bytes = if format == printcraft_engine::compare::OfficeFormat::Docx {
             let mode = printcraft_engine::compare::WordMode::from_id(mode.unwrap_or("preserve"))
                 .ok_or_else(|| ToolError::InvalidArgs("word_mode must be preserve or editable".into()))?;
             self.doc(a)?.export_word(mode).map_err(failed)?
+        } else if format == printcraft_engine::compare::OfficeFormat::Xlsx {
+            let mode = printcraft_engine::spreadsheet::ExcelMode::from_id(excel_mode.unwrap_or("editable"))
+                .ok_or_else(|| ToolError::InvalidArgs("excel_mode must be preserve or editable".into()))?;
+            self.doc(a)?.export_excel(mode).map_err(failed)?
         } else {
             self.doc(a)?.export_office(format).map_err(failed)?
         };
@@ -279,6 +287,9 @@ impl Automation {
         let mut result = json!({ "path": path.to_string_lossy(), "bytes": bytes.len(), "format": format.extension() });
         if format == printcraft_engine::compare::OfficeFormat::Docx {
             result["word_mode"] = json!(mode.unwrap_or("preserve"));
+        }
+        if format == printcraft_engine::compare::OfficeFormat::Xlsx {
+            result["excel_mode"] = json!(excel_mode.unwrap_or("editable"));
         }
         Ok(result)
     }
